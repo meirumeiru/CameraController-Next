@@ -1,0 +1,14 @@
+*.vspscc
+*.vssscc
+*.scc
+*.suo
+*.user
+
+/*.bat
+
+/CameraController-Next/*.sln
+
+/_release/
+
+/CameraController-Next/CameraController-Next/bin/
+/CameraController-Next/CameraController-Next/obj/
