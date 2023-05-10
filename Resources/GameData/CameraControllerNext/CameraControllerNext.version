@@ -1,7 +1,7 @@
 {
   "NAME"     : "CameraController Next",
   "DOWNLOAD" : "https://github.com/meirumeiru/CameraController-Next/releases",
-  "URL"      : "https://github.com/meirumeiru/CameraController-Next/raw/master/Resources/GameData/CameraController-Next/CameraController-Next.version",
+  "URL"      : "https://github.com/meirumeiru/CameraController-Next/raw/main/Resources/GameData/CameraControllerNext/CameraControllerNext.version",
   "GITHUB" : {
       "USERNAME"   : "meirumeiru",
       "REPOSITORY" : "CameraController-Next"

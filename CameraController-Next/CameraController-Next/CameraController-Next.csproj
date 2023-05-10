@@ -7,8 +7,8 @@
     <ProjectGuid>{60D3F232-0993-432D-9463-7A09C00484A9}</ProjectGuid>
     <OutputType>Library</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>CameraController_Next</RootNamespace>
-    <AssemblyName>CameraController-Next</AssemblyName>
+    <RootNamespace>CameraControllerNext</RootNamespace>
+    <AssemblyName>CameraControllerNext</AssemblyName>
     <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <Deterministic>true</Deterministic>
