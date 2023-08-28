@@ -50,9 +50,13 @@ namespace CameraController_Next
 				return null;
 		}
 
-static float factor = 0.1f; // FEHLER, temp, später anders lösen... so mit coroutine oder was weiss ich
+static float factor = 0.4f; // FEHLER, temp, später anders lösen... so mit coroutine oder was weiss ich
+static float mousefactor = 0.4f;
+
 		static float scrollfactor = 10f;
+
 static float rfactor = 1f;
+static float rmousefactor = 0.1f; // FEHLER, ich rate...
 
 static float tms = 0.2f; // 0.2 Sekunden zusammenrechnen
 static float tm = 0f; // delta-time-summe
@@ -71,11 +75,35 @@ static Quaternion rotation0;
 
 static float lerp;
 
+
+static float otherAngle = 0f;
+
+
+
+
+// FEHLER, noch neuere Idee
+static Quaternion frameOfReference;
+static Vector3 relPosition; // position = vessel.position (com oder position, weiss noch nicht) + frameOfReference * relPosition
+static Vector3 relPivot;
+static Quaternion relRotation;
+
+static float hdg;
+static float pitch;
+static float rot;
+
+
+static Vector3 relPosition0; // position = vessel.position (com oder position, weiss noch nicht) + frameOfReference * relPosition
+static Quaternion relRotation0;
+
+
+static bool ref1 = false;
+
+
 		public void CalcHdgPitchFromVector(Vector3 vector, out float hdg, out float pitch) // vector zeigt von Kamera zum Pivot (world)
 		{
 				// FEHLER, bin nicht sicher ob's stimmt, das noch klären
-			Quaternion frameOfReference =
-				FlightCamera.fetch.getReferenceFrame();
+	//		Quaternion frameOfReference =
+	//			FlightCamera.fetch.getReferenceFrame();
 
 			vector = Quaternion.Inverse(frameOfReference) * vector.normalized;
 
@@ -90,6 +118,9 @@ static float lerp;
 			if(vesselToCamera.sqrMagnitude > (FlightCamera.fetch.maxDistance * FlightCamera.fetch.maxDistance))
 				position = FlightGlobals.ActiveVessel.transform.position + vesselToCamera.normalized * FlightCamera.fetch.maxDistance;
 		}
+
+static bool blerp = false;
+static float lerpend = 0.96f;
 
 		public void Update()
 		{
@@ -130,6 +161,31 @@ static float lerp;
 					rotation0 = rotation;
 
 					lerp = 0f;
+
+// FEHLER, neue Idee -> aktuell kein "sanfter" Übergang, sondern einfach "peng"
+
+if(ref1)
+frameOfReference = FlightGlobals.GetFoR(FoRModes.SHP_REL);
+else
+frameOfReference = FlightCamera.fetch.getReferenceFrame();
+
+relPosition = Quaternion.Inverse(frameOfReference) * (position - FlightGlobals.ActiveVessel.transform.position);
+relPivot = Quaternion.Inverse(frameOfReference) * (pivot - FlightGlobals.ActiveVessel.transform.position);
+
+CalcHdgPitchFromVector(position - pivot, out hdg, out pitch);
+rot = 0;
+
+// FEHLER, hier rotation errechnen... irgendwie... nicht übernehmen... weil, muss man später ja auch können
+//rotation = frameOfReference * Quaternion.AngleAxis(hdg * 57.29578f, Vector3.up)
+//							* Quaternion.AngleAxis(pitch * 57.29578f, Vector3.right)
+//							* Quaternion.AngleAxis(rot * 57.29578f, Vector3.forward);
+
+rotation = FlightCamera.fetch.transform.rotation;
+					relRotation = Quaternion.Inverse(frameOfReference) * rotation;
+
+
+relPosition0 = Quaternion.Inverse(frameOfReference) * (position0 - FlightGlobals.ActiveVessel.transform.position);
+relRotation0 = Quaternion.Inverse(frameOfReference) * rotation0;
 				}
 
 				ScreenMessages.PostScreenMessage(active ? "CameraController active" : "normal camera", 3, ScreenMessageStyle.UPPER_CENTER);
@@ -137,14 +193,26 @@ static float lerp;
 
 			if(!active)
 			{
+// FEHLER, geht nicht mehr, das ist mir aber im Moment furzegal
+
 				if(lerp < 1.0f)
 				{
 					lerp += Time.deltaTime * 2f; // revert in 0.5 seconds
 
+			position = FlightGlobals.ActiveVessel.transform.position + frameOfReference * relPosition;
+			pivot = FlightGlobals.ActiveVessel.transform.position + frameOfReference * relPivot;
+			rotation = frameOfReference * relRotation;
+
+			position0 = FlightGlobals.ActiveVessel.transform.position + frameOfReference * relPosition0;
+			rotation0 = frameOfReference * relRotation0;
+
+if(blerp)
 					FlightCamera.fetch.GetCameraTransform().position = Vector3.Lerp(position, position0, lerp);
+else
+					FlightCamera.fetch.GetCameraTransform().position = Vector3.Slerp(position, position0, lerp);
 					FlightCamera.fetch.GetCameraTransform().rotation = Quaternion.Slerp(rotation, rotation0, lerp);
 
-					if(lerp >= 1.0f)
+					if(lerp >= lerpend)
 						FlightCamera.fetch.ActivateUpdate();
 				}
 
@@ -152,13 +220,34 @@ static float lerp;
 			}
 
 // FEHLER, es fehlt noch was... manchmal (bei hohen Geschwindigkeiten) springt was... hab aber noch nicht rausgefunden was genau
+// FEHLER, manchmal (im Orbit), da dreht's nicht korrekt, sondern in andere Richtungen? sehr komisch...
 
-			if(Input.GetKey(KeyCode.LeftAlt) | Input.GetKey(KeyCode.RightAlt))
+
+			// Update der aktuellen Infos
+// FEHLER, alles experimentell und neu
+
+if(ref1)
+			frameOfReference = FlightGlobals.GetFoR(FoRModes.SHP_REL);
+else
+			frameOfReference = FlightCamera.fetch.getReferenceFrame();
+
+			position = FlightGlobals.ActiveVessel.transform.position + frameOfReference * relPosition;
+			pivot = FlightGlobals.ActiveVessel.transform.position + frameOfReference * relPivot;
+
+//			rotation = frameOfReference * Quaternion.AngleAxis(hdg * 57.29578f, Vector3.up)
+//										* Quaternion.AngleAxis(pitch * 57.29578f, Vector3.right)
+//										* Quaternion.AngleAxis(rot * 57.29578f, Vector3.forward);
+
+			hdg = 0; pitch = 0; rot = 0; // FEHLER, neue Idee
+			rotation = frameOfReference * relRotation;
+
+			bool hasInput = false;
+
+
+			if(Input.GetKey(KeyCode.RightShift))
 			{
 				//////////////////////////////
 				// Translation
-
-				bool hasInput = false;
 
 				Vector3 positionToPivot = pivot - position;
 
@@ -186,25 +275,79 @@ static float lerp;
 					hasInput = true;
 				}
 
+				if(Input.GetMouseButton(1))
+				{
+					float x = Input.GetAxis("Mouse X");
+					float y = Input.GetAxis("Mouse Y");
+
+					if(x != 0f)
+					{
+						position -= rotation * Vector3.right * x * mousefactor;
+						hasInput = true;
+					}
+
+					if(y != 0)
+					{
+						position -= rotation * Vector3.up * y * mousefactor;
+						hasInput = true;
+					}
+				}
+
 				if(hasInput)
 				{
 					ClampPosition();
 
 					pivot = position + positionToPivot;
-					FlightCamera.fetch.GetCameraTransform().position = position;
+
+					relPosition = Quaternion.Inverse(frameOfReference) * (position - FlightGlobals.ActiveVessel.transform.position);
+					relPivot = Quaternion.Inverse(frameOfReference) * (pivot - FlightGlobals.ActiveVessel.transform.position);
+				}
+			}
+			else if(Input.GetKey(KeyCode.RightControl))
+			{
+				//////////////////////////////
+				// Rotation um die Sichtachse
+
+				if(Input.GetKey(KeyCode.RightArrow))
+				{
+					rot -= (Mathf.PI / 180f) * rfactor;
+					hasInput = true;
+				}
+
+				if(Input.GetKey(KeyCode.LeftArrow))
+				{
+					rot += (Mathf.PI / 180f) * rfactor;
+					hasInput = true;
+				}
+
+				if(Input.GetMouseButton(1))
+				{
+					float x = Input.GetAxis("Mouse X");
+
+					if(x != 0f)
+					{
+						rot -= x * rmousefactor;
+						hasInput = true;
+					}
+				}
+
+				if(hasInput)
+				{
+//					rotation = frameOfReference * Quaternion.AngleAxis(hdg * 57.29578f, Vector3.up)
+//												* Quaternion.AngleAxis(pitch * 57.29578f, Vector3.right)
+//												* Quaternion.AngleAxis(rot * 57.29578f, Vector3.forward);
+
+					rotation = rotation * Quaternion.AngleAxis(hdg * 57.29578f, Vector3.up)
+										* Quaternion.AngleAxis(pitch * 57.29578f, Vector3.right)
+										* Quaternion.AngleAxis(rot * 57.29578f, Vector3.forward);
+
+					relRotation = Quaternion.Inverse(frameOfReference) * rotation;
 				}
 			}
 			else
 			{
 				//////////////////////////////
 				// Rotation
-
-				bool hasInput = false;
-
-				Quaternion frameOfReference = FlightCamera.fetch.getReferenceFrame();
-
-				float hdg, pitch;
-				CalcHdgPitchFromVector(position - pivot, out hdg, out pitch);
 
 				if(Input.GetKey(KeyCode.RightArrow))
 				{
@@ -230,20 +373,44 @@ static float lerp;
 					hasInput = true;
 				}
 
+				if(Input.GetMouseButton(1))
+				{
+					float x = Input.GetAxis("Mouse X");
+					float y = Input.GetAxis("Mouse Y");
+
+					if(x != 0f)
+					{
+						hdg -= x * rmousefactor;
+						hasInput = true;
+					}
+
+					if(y != 0)
+					{
+						pitch -= y * rmousefactor;
+						hasInput = true;
+					}
+				}
+
 				if(hasInput)
 				{
-					FlightCamera.fetch.GetCameraTransform().rotation =
-						frameOfReference * Quaternion.AngleAxis(hdg * 57.29578f, Vector3.up) * Quaternion.AngleAxis(pitch * 57.29578f, Vector3.right);
-
 					Vector3 localPivotToPosition = Quaternion.Inverse(rotation) * (position - pivot);
 
-					rotation = FlightCamera.fetch.GetCameraTransform().rotation;
+//					rotation = frameOfReference * Quaternion.AngleAxis(hdg * 57.29578f, Vector3.up)
+//												* Quaternion.AngleAxis(pitch * 57.29578f, Vector3.right)
+//												* Quaternion.AngleAxis(rot * 57.29578f, Vector3.forward);
 
+					rotation = rotation * Quaternion.AngleAxis(hdg * 57.29578f, Vector3.up)
+										* Quaternion.AngleAxis(pitch * 57.29578f, Vector3.right)
+										* Quaternion.AngleAxis(rot * 57.29578f, Vector3.forward);
+					
 					position = pivot + rotation * localPivotToPosition;
 
 					ClampPosition();
 
-					FlightCamera.fetch.GetCameraTransform().position = position;
+					relPosition = Quaternion.Inverse(frameOfReference) * (position - FlightGlobals.ActiveVessel.transform.position);
+					relPivot = Quaternion.Inverse(frameOfReference) * (pivot - FlightGlobals.ActiveVessel.transform.position);
+
+					relRotation = Quaternion.Inverse(frameOfReference) * rotation;
 				}
 			}
 
@@ -269,7 +436,7 @@ ef /= 15;
 
 				ClampPosition();
 
-				if(Input.GetKey(KeyCode.LeftAlt) | Input.GetKey(KeyCode.RightAlt))
+				if(Input.GetKey(KeyCode.RightShift))
 				{
 					//////////////////////////////
 					// Translation
@@ -277,14 +444,15 @@ ef /= 15;
 					pivot = position + positionToPivot;
 				}
 
-				FlightCamera.fetch.GetCameraTransform().position = position;
+				relPosition = Quaternion.Inverse(frameOfReference) * (position - FlightGlobals.ActiveVessel.transform.position);
+				relPivot = Quaternion.Inverse(frameOfReference) * (pivot - FlightGlobals.ActiveVessel.transform.position);
 			}
 
 			//////////////////////////////
 			// Zoom
 
 			{
-				bool hasInput = false;
+				hasInput = false;
 
 				Vector3 positionToPivot = pivot - position;
 
@@ -305,9 +473,20 @@ ef /= 15;
 					ClampPosition();
 
 					pivot = position + positionToPivot;
-					FlightCamera.fetch.GetCameraTransform().position = position;
 				}
+
+				relPosition = Quaternion.Inverse(frameOfReference) * (position - FlightGlobals.ActiveVessel.transform.position);
+				relPivot = Quaternion.Inverse(frameOfReference) * (pivot - FlightGlobals.ActiveVessel.transform.position);
 			}
+
+			// grundsätzlich immer die Position und so anpassen, weil... evtl. bewegt sich ja etwas anderes?
+//rotation = frameOfReference * Quaternion.AngleAxis(hdg * 57.29578f, Vector3.up)
+//							* Quaternion.AngleAxis(pitch * 57.29578f, Vector3.right)
+//							* Quaternion.AngleAxis(rot * 57.29578f, Vector3.forward);
+
+FlightCamera.fetch.GetCameraTransform().rotation = rotation;
+
+FlightCamera.fetch.GetCameraTransform().position = position;
 		}
 	}
 }

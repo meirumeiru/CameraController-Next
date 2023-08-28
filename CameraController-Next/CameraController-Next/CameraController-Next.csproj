@@ -79,7 +79,7 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="EditorCameraController.cs" />
+    <None Include="EditorCameraController.cs" />
     <Compile Include="FlightCameraController.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
