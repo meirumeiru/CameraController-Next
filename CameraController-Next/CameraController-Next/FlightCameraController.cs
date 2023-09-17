@@ -41,40 +41,46 @@ namespace CameraController_Next
 		private GameObject ShadowCamera = null;
 
 
-		static float inputfactor = 0.2f;		// FEHLER, diese als Setting führen und -> evtl. "Acceleration" einbauen... auf die eine oder andere Art??
-		static float mousefactor = 0.4f;
-		static float scrollfactor = 10f;
+		// input factors
 
-		static float rinputfactor = 1f;
-		static float rmousefactor = 0.1f;
+		static float inputfactor_move = 0.2f;
+		static float mousefactor_move = 0.4f;
 
+		static float inputfactor_roll = 1f;
+		static float mousefactor_roll = 0.1f;
 
-		float lerp;
+		static float wheelfactor = 10f;
+
+		// revert factors
+
 		static float lerpfactor = 2f;
 
+		// scroll acceleration
 
-		static float tms = 0.2f; // 0.2 Sekunden zusammenrechnen
-		float tm = 0f; // delta-time-summe
+		static float tms = 0.2f; // delta-time
+
+		float tm = 0f; // time sum
+		Vector2 tv = Vector2.zero; // current scroll sum
 		float scrollMagnitude = 0f;
-		Vector2 tvl; // letzte Summe
-		Vector2 tv = Vector2.zero; // summe des Scrollens im aktuellen Zeitschlitz
 
+		// position and rotation
 		
 		Quaternion frameOfReference;
-	Part partOfReference; // FEHLER, temp...
+		Part partOfReference;
 
-		Vector3 position;		// Kamera
-		Quaternion rotation;	// Kamera
+		Vector3 position;		// camera
+		Quaternion rotation;	// camera
 
-		Vector3 pivot;			// Hilfspunkt zum drum herum drehen
+		Vector3 pivot;
 		Quaternion pivotRotation;
-
 
 		Vector3 relPosition;	// position = vessel.position (com oder position, weiss noch nicht) + frameOfReference * relPosition
 		Quaternion relRotation;
 
 		Vector3 relPivot;
 		Quaternion relPivotRotation;
+
+		float lerp;
 
 
 		public KerbalFSM fsm;
@@ -112,6 +118,8 @@ namespace CameraController_Next
 
 		public void OnDestroy()
 		{
+		//	Destroy(ShadowCamera);
+
 	//		GameEvents.OnCameraChange.Remove(onCamChange);
 			GameEvents.onVesselChange.Remove(OnVesselChange);
 		}
@@ -140,11 +148,7 @@ namespace CameraController_Next
 
 			ShadowCamera = new GameObject();
 			ShadowCamera.SetActive(true);
-
-		//	Destroy(ShadowCamera);
 		}
-
-static bool followTarget = true;
 
 		private void SetupFSM()
 		{
@@ -156,6 +160,7 @@ static bool followTarget = true;
 			};
 			st_normal.OnLateUpdate = delegate
 			{
+				// activate camera controller if key is pressed
 				if(Input.GetKeyDown(KeyCode.KeypadDivide))
 					fsm.RunEvent(on_activate);
 			};
@@ -179,22 +184,27 @@ static bool followTarget = true;
 			};
 			st_active.OnLateUpdate = delegate
 			{
-// FEHELR, target change berücksichtigen? -> und sowieso TargetMode beachten?
-
-				// das immer tun, halt im Hintergrund
+				// calculate the original position of the camera
 				ShadowLateUpdate();
 
+				// calculate our position of the camera
 				CalculateCameraPosition();
+
+				// process inputs
 				ProcessInput();
 
+				// set position of the camera
 				FlightCamera.fetch.transform.rotation = rotation;
 				FlightCamera.fetch.transform.position = position;
 
-				FlightCamera.fetch.DeactivateUpdate(); // FEHLER, ich muss das IMMER WIEDER HINWÜRGEN !!!!
+				// fix setting in case it was changed
+				FlightCamera.fetch.DeactivateUpdate(); // reset this in every frame -> sometimes it suddendly changes
 
-if(followTarget && FlightCamera.fetch.Target && (partOfReference.transform != FlightCamera.fetch.Target))	// FEHLER, test... mal als Idee
-	CaptureCamera();
+				// switch reference to new part in case it changed
+				if(FlightCamera.fetch.Target && (partOfReference.transform != FlightCamera.fetch.Target))
+					CaptureCamera();
 
+				// deactivate camera controller if key is pressed
 				if(Input.GetKeyDown(KeyCode.KeypadDivide))
 					fsm.RunEvent(on_normalize);
 			};
@@ -210,15 +220,11 @@ if(followTarget && FlightCamera.fetch.Target && (partOfReference.transform != Fl
 			};
 			st_normalizing.OnLateUpdate = delegate
 			{
-				// das immer tun, halt im Hintergrund
 				ShadowLateUpdate();
 
 				CalculateCameraPosition();
 
 				lerp += Time.deltaTime * lerpfactor; // revert in 0.5 seconds
-
-//				FlightCamera.fetch.transform.position = Vector3.Slerp(position, ShadowCamera.transform.position, lerp);
-//				FlightCamera.fetch.transform.rotation = Quaternion.Slerp(rotation, ShadowCamera.transform.rotation, lerp);
 
 				FlightCamera.fetch.transform.position = Vector3.Lerp(position, ShadowCamera.transform.position, lerp);
 				FlightCamera.fetch.transform.rotation = Quaternion.Lerp(rotation, ShadowCamera.transform.rotation, lerp);
@@ -250,29 +256,18 @@ if(followTarget && FlightCamera.fetch.Target && (partOfReference.transform != Fl
 			fsm.AddEvent(on_normalized, st_normalizing);
 		}
 
-	//	public void onCamChange(CameraManager.CameraMode mode)
-	//	{
-	//		if(active || !allok)
-	//			FlightCamera.fetch.DeactivateUpdate();
-	//	}
-
 		private void CaptureCamera()
 		{
-// FEHLER, neue Idee
-if(FlightCamera.fetch.Target != null)
-	partOfReference = FlightCamera.fetch.Target.GetComponent<Part>();
-else
-	partOfReference = null;
+			if(FlightCamera.fetch.Target != null)
+				partOfReference = FlightCamera.fetch.Target.GetComponent<Part>();
+			else
+				partOfReference = null;
 
-if(partOfReference == null)
-	partOfReference = FlightGlobals.ActiveVessel.rootPart;	// FEHLER, was, wenn das Teil plötzlich verschwindet? -> klären dann
+			if(partOfReference == null)
+				partOfReference = FlightGlobals.ActiveVessel.rootPart;
 
-
-//				frameOfReference = FlightCamera.fetch.getReferenceFrame();
 			frameOfReference = FlightGlobals.GetFoR(FlightCamera.fetch.FoRMode,
 				partOfReference.transform, partOfReference.vessel.orbit);
-
-//tgt = FlightCamera.fetch.Target; // FEHLER, Versuch für Fix
 
 			position = FlightCamera.fetch.transform.position;
 			rotation = FlightCamera.fetch.transform.rotation;
@@ -448,34 +443,15 @@ if(partOfReference == null)
 				position = FlightGlobals.ActiveVessel.transform.position + vesselToCamera.normalized * FlightCamera.fetch.maxDistance;
 		}
 
-// FEHLER, neue Idee für Fix
-//Transform tgt; VesselTargetModes tgtMode;
-protected virtual void OnVesselChange(Vessel vessel)
+		protected virtual void OnVesselChange(Vessel vessel)
 		{
-	// FEHLER, hier was tun, wenn partOfReference nicht mehr Teil vom Vessel wäre...
 			CaptureCamera();
 		}
 
 		private void CalculateCameraPosition()
 		{
-			// Update der aktuellen Infos
-
-		//	frameOfReference = FlightCamera.fetch.getReferenceFrame();
 			frameOfReference = FlightGlobals.GetFoR(FlightCamera.fetch.FoRMode,
 				partOfReference.transform, partOfReference.vessel.orbit);
-	//			FlightGlobals.ActiveVessel.ReferenceTransform, FlightGlobals.ActiveVessel.orbit);
-
-/*
-if(FlightCamera.fetch.Target != tgt)	// FEHLER, QuickFix? ob das geht? -> ja, aber es hoppst trotzdem ein bisschen... nur ein Pixel oder so
-{
-		relPosition = Quaternion.Inverse(frameOfReference) * (position - FlightGlobals.ActiveVessel.transform.position);
-		relRotation = Quaternion.Inverse(frameOfReference) * rotation;
-
-		relPivot = Quaternion.Inverse(frameOfReference) * (pivot - FlightGlobals.ActiveVessel.transform.position);
-		relPivotRotation = Quaternion.Inverse(frameOfReference) * pivotRotation;
-
-					tgt = FlightCamera.fetch.Target;
-}*/
 
 			position = partOfReference.transform.position + frameOfReference * relPosition;
 			rotation = frameOfReference * relRotation;
@@ -486,26 +462,23 @@ if(FlightCamera.fetch.Target != tgt)	// FEHLER, QuickFix? ob das geht? -> ja, ab
 
 		private void ProcessInput()
 		{
-			// Scroll-Acceleration
+			// Scroll Acceleration
 
 			tm += Time.deltaTime;
 			tv += Input.mouseScrollDelta;
 
 			if(tm >= tms)
 			{
-				tvl = tv;
+				scrollMagnitude = 0.3f * scrollMagnitude + 0.7f * tv.magnitude;
+				scrollMagnitude = (scrollMagnitude > 0.1f) ? scrollMagnitude - 0.1f : 0f;
 
-				scrollMagnitude = 0.3f * scrollMagnitude + 0.7f * tvl.magnitude;
-				scrollMagnitude =
-					(scrollMagnitude > 0.1f) ? scrollMagnitude - 0.1f : 0f;
-
-				tv = Vector3.zero;
 				tm = 0f;
+				tv = Vector3.zero;
 			}
 
-			// Input verarbeiten
+			// Input
 
-float fFactor = Input.GetKey(KeyCode.KeypadMultiply) ? 0.1f : 1f;
+			float slowFactor = Input.GetKey(KeyCode.KeypadMultiply) ? 0.1f : 1f; // if you want to move the camera very slow e.g. for filming or precise movements
 
 			float hdg = 0; float pitch = 0; float rot = 0; float rot2 = 0;
 			bool hasInput = false;
@@ -522,25 +495,25 @@ float fFactor = Input.GetKey(KeyCode.KeypadMultiply) ? 0.1f : 1f;
 			{
 				if(Input.GetKey(KeyCode.RightArrow))
 				{
-					position += rotation * Vector3.right * inputfactor * fFactor;
+					position += rotation * Vector3.right * inputfactor_move * slowFactor;
 					hasInput = true;
 				}
 				
 				if(Input.GetKey(KeyCode.LeftArrow))
 				{
-					position -= rotation * Vector3.right * inputfactor * fFactor;
+					position -= rotation * Vector3.right * inputfactor_move * slowFactor;
 					hasInput = true;
 				}
 
 				if(Input.GetKey(KeyCode.UpArrow))
 				{
-					position += rotation * Vector3.up * inputfactor * fFactor;
+					position += rotation * Vector3.up * inputfactor_move * slowFactor;
 					hasInput = true;
 				}
 
 				if(Input.GetKey(KeyCode.DownArrow))
 				{
-					position -= rotation * Vector3.up * inputfactor * fFactor;
+					position -= rotation * Vector3.up * inputfactor_move * slowFactor;
 					hasInput = true;
 				}
 
@@ -551,13 +524,13 @@ float fFactor = Input.GetKey(KeyCode.KeypadMultiply) ? 0.1f : 1f;
 
 					if(x != 0f)
 					{
-						position -= rotation * Vector3.right * x * mousefactor * fFactor;
+						position -= rotation * Vector3.right * x * mousefactor_move * slowFactor;
 						hasInput = true;
 					}
 
 					if(y != 0)
 					{
-						position -= rotation * Vector3.up * y * mousefactor * fFactor;
+						position -= rotation * Vector3.up * y * mousefactor_move * slowFactor;
 						hasInput = true;
 					}
 				}
@@ -570,13 +543,13 @@ float fFactor = Input.GetKey(KeyCode.KeypadMultiply) ? 0.1f : 1f;
 
 				if(x != 0f)
 				{
-					position -= rotation * Vector3.right * x * mousefactor * fFactor;
+					position -= rotation * Vector3.right * x * mousefactor_move * slowFactor;
 					hasInput = true;
 				}
 
 				if(y != 0)
 				{
-					position -= rotation * Vector3.up * y * mousefactor * fFactor;
+					position -= rotation * Vector3.up * y * mousefactor_move * slowFactor;
 					hasInput = true;
 				}
 			}
@@ -593,7 +566,7 @@ float fFactor = Input.GetKey(KeyCode.KeypadMultiply) ? 0.1f : 1f;
 			}
 
 			//////////////////////////////
-			// Rotation um die Sichtachse
+			// Rotation Around View Axis
 
 			{
 			hasInput = false;
@@ -603,25 +576,25 @@ float fFactor = Input.GetKey(KeyCode.KeypadMultiply) ? 0.1f : 1f;
 			{
 				if(Input.GetKey(KeyCode.RightArrow))
 				{
-					rot -= (Mathf.PI / 180f) * rinputfactor * fFactor;
+					rot -= (Mathf.PI / 180f) * inputfactor_roll * slowFactor;
 					hasInput = true;
 				}
 
 				if(Input.GetKey(KeyCode.LeftArrow))
 				{
-					rot += (Mathf.PI / 180f) * rinputfactor * fFactor;
+					rot += (Mathf.PI / 180f) * inputfactor_roll * slowFactor;
 					hasInput = true;
 				}
 
 				if(Input.GetKey(KeyCode.UpArrow))
 				{
-					rot2 += (Mathf.PI / 180f) * rinputfactor * fFactor;
+					rot2 += (Mathf.PI / 180f) * inputfactor_roll * slowFactor;
 					hasInput = true;
 				}
 
 				if(Input.GetKey(KeyCode.DownArrow))
 				{
-					rot2 -= (Mathf.PI / 180f) * rinputfactor * fFactor;
+					rot2 -= (Mathf.PI / 180f) * inputfactor_roll * slowFactor;
 					hasInput = true;
 				}
 
@@ -632,13 +605,13 @@ float fFactor = Input.GetKey(KeyCode.KeypadMultiply) ? 0.1f : 1f;
 
 					if(x != 0f)
 					{
-						rot -= x * rmousefactor * fFactor;
+						rot -= x * mousefactor_roll * slowFactor;
 						hasInput = true;
 					}
 
 					if(y != 0f)
 					{
-						rot2 -= y * rmousefactor * fFactor;
+						rot2 -= y * mousefactor_roll * slowFactor;
 						hasInput = true;
 					}
 				}
@@ -651,13 +624,13 @@ float fFactor = Input.GetKey(KeyCode.KeypadMultiply) ? 0.1f : 1f;
 
 				if(x != 0f)
 				{
-					rot -= x * rmousefactor * fFactor;
+					rot -= x * mousefactor_roll * slowFactor;
 					hasInput = true;
 				}
 
 				if(y != 0f)
 				{
-					rot2 -= y * rmousefactor * fFactor;
+					rot2 -= y * mousefactor_roll * slowFactor;
 					hasInput = true;
 				}
 			}
@@ -680,16 +653,10 @@ float fFactor = Input.GetKey(KeyCode.KeypadMultiply) ? 0.1f : 1f;
 
 				relRotation = Quaternion.Inverse(frameOfReference) * rotation;
 
-/*
-				rotation = rotation * Quaternion.AngleAxis(hdg * 57.29578f, Vector3.up)
-									* Quaternion.AngleAxis(pitch * 57.29578f, Vector3.right)
-									* Quaternion.AngleAxis(rot * 57.29578f, Vector3.forward);
-
-				relRotation = Quaternion.Inverse(frameOfReference) * rotation;
-*/
-
 				position = pivot + rotation * localPivotToPosition;
+
 				ClampPosition();
+
 				relPosition = Quaternion.Inverse(frameOfReference) * (position - partOfReference.transform.position);
 			}
 			}
@@ -704,25 +671,25 @@ float fFactor = Input.GetKey(KeyCode.KeypadMultiply) ? 0.1f : 1f;
 			{
 				if(Input.GetKey(KeyCode.RightArrow))
 				{
-					hdg -= (Mathf.PI / 180f) * rinputfactor * fFactor;
+					hdg -= (Mathf.PI / 180f) * inputfactor_roll * slowFactor;
 					hasInput = true;
 				}
 
 				if(Input.GetKey(KeyCode.LeftArrow))
 				{
-					hdg += (Mathf.PI / 180f) * rinputfactor * fFactor;
+					hdg += (Mathf.PI / 180f) * inputfactor_roll * slowFactor;
 					hasInput = true;
 				}
 
 				if(Input.GetKey(KeyCode.UpArrow))
 				{
-					pitch += (Mathf.PI / 180f) * rinputfactor * fFactor;
+					pitch += (Mathf.PI / 180f) * inputfactor_roll * slowFactor;
 					hasInput = true;
 				}
 
 				if(Input.GetKey(KeyCode.DownArrow))
 				{
-					pitch -= (Mathf.PI / 180f) * rinputfactor * fFactor;
+					pitch -= (Mathf.PI / 180f) * inputfactor_roll * slowFactor;
 					hasInput = true;
 				}
 
@@ -733,13 +700,13 @@ float fFactor = Input.GetKey(KeyCode.KeypadMultiply) ? 0.1f : 1f;
 
 					if(x != 0f)
 					{
-						hdg += x * rmousefactor * fFactor;
+						hdg += x * mousefactor_roll * slowFactor;
 						hasInput = true;
 					}
 
 					if(y != 0)
 					{
-						pitch -= y * rmousefactor * fFactor;
+						pitch -= y * mousefactor_roll * slowFactor;
 						hasInput = true;
 					}
 				}
@@ -747,31 +714,6 @@ float fFactor = Input.GetKey(KeyCode.KeypadMultiply) ? 0.1f : 1f;
 
 			if(hasInput)
 			{
-//if(false) // alte Version
-//{
-//					Vector3 localPivotToPosition = Quaternion.Inverse(rotation) * (position - pivot);
-
-////					rotation = frameOfReference * Quaternion.AngleAxis(hdg * 57.29578f, Vector3.up)
-////												* Quaternion.AngleAxis(pitch * 57.29578f, Vector3.right)
-////												* Quaternion.AngleAxis(rot * 57.29578f, Vector3.forward);
-
-//					rotation = rotation * Quaternion.AngleAxis(hdg * 57.29578f, Vector3.up)
-//										* Quaternion.AngleAxis(pitch * 57.29578f, Vector3.right)
-//										* Quaternion.AngleAxis(rot * 57.29578f, Vector3.forward);
-					
-//					position = pivot + rotation * localPivotToPosition;
-
-//					ClampPosition();
-
-//					relPosition = Quaternion.Inverse(frameOfReference) * (position - FlightGlobals.ActiveVessel.transform.position);
-//					relPivot = Quaternion.Inverse(frameOfReference) * (pivot - FlightGlobals.ActiveVessel.transform.position);
-
-//					relRotation = Quaternion.Inverse(frameOfReference) * rotation;
-//}
-//else
-//{
-// neu -> rot um achse
-
 				Vector3 localPivotToPosition = Quaternion.Inverse(rotation) * (position - pivot);
 
 				rotation = rotation * Quaternion.AngleAxis(pitch * 57.29578f, Vector3.right);
@@ -780,11 +722,10 @@ float fFactor = Input.GetKey(KeyCode.KeypadMultiply) ? 0.1f : 1f;
 				relRotation = Quaternion.Inverse(frameOfReference) * rotation;
 
 				position = pivot + rotation * localPivotToPosition;
-				ClampPosition();
-				relPosition = Quaternion.Inverse(frameOfReference) * (position - partOfReference.transform.position);
 
-//				relPivot = Quaternion.Inverse(frameOfReference) * (pivot - partOfReference.transform.position);
-//}
+				ClampPosition();
+
+				relPosition = Quaternion.Inverse(frameOfReference) * (position - partOfReference.transform.position);
 			}
 			}
 
@@ -796,13 +737,9 @@ float fFactor = Input.GetKey(KeyCode.KeypadMultiply) ? 0.1f : 1f;
 				float sm = 0.3f + Mathf.Min(scrollMagnitude / 4f, 0.7f);
 				float z = sm * GameSettings.AXIS_MOUSEWHEEL.GetAxis();
 
-// FEHLER, hier noch Faktor bauen für Distanz Pivot-Position -> je weiter, um so grösser
-float ef = (pivot - position).magnitude;
+				z *= (pivot - position).magnitude * 0.067f; // distance factor
 
-ef /= 15;
-				z *= ef;
-
-				z *= scrollfactor * fFactor;
+				z *= wheelfactor * slowFactor;
 
 				Vector3 positionToPivot = pivot - position;
 
@@ -832,13 +769,13 @@ ef /= 15;
 
 				if(GameSettings.ZOOM_IN.GetKey())
 				{
-					position += rotation * Vector3.forward * inputfactor * fFactor;
+					position += rotation * Vector3.forward * inputfactor_move * slowFactor;
 					hasInput = true;
 				}
 
 				if(GameSettings.ZOOM_OUT.GetKey())
 				{
-					position -= rotation * Vector3.forward * inputfactor * fFactor;
+					position -= rotation * Vector3.forward * inputfactor_move * slowFactor;
 					hasInput = true;
 				}
 
