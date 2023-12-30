@@ -109,6 +109,10 @@ namespace CameraController_Next
 	//		GameEvents.OnCameraChange.Add(onCamChange);
 			GameEvents.onVesselChange.Add(OnVesselChange);
 
+			GameEvents.onVesselDocking.Add(OnDocking);
+			GameEvents.onPartUndock.Add(OnUndocking);
+			GameEvents.onPartDeCouple.Add(OnUndocking);
+
 			Init();
 
 			SetupFSM();
@@ -122,6 +126,10 @@ namespace CameraController_Next
 
 	//		GameEvents.OnCameraChange.Remove(onCamChange);
 			GameEvents.onVesselChange.Remove(OnVesselChange);
+
+			GameEvents.onVesselDocking.Add(OnDocking);
+			GameEvents.onPartUndock.Add(OnUndocking);
+			GameEvents.onPartDeCouple.Add(OnUndocking);
 		}
 
 		private void Init()
@@ -256,7 +264,7 @@ namespace CameraController_Next
 			fsm.AddEvent(on_normalized, st_normalizing);
 		}
 
-		private void CaptureCamera()
+		private void CaptureCamera(bool keepPosition = false)
 		{
 			if(FlightCamera.fetch.Target != null)
 				partOfReference = FlightCamera.fetch.Target.GetComponent<Part>();
@@ -269,8 +277,11 @@ namespace CameraController_Next
 			frameOfReference = FlightGlobals.GetFoR(FlightCamera.fetch.FoRMode,
 				partOfReference.transform, partOfReference.vessel.orbit);
 
-			position = FlightCamera.fetch.transform.position;
-			rotation = FlightCamera.fetch.transform.rotation;
+			if(!keepPosition)
+			{
+				position = FlightCamera.fetch.transform.position;
+				rotation = FlightCamera.fetch.transform.rotation;
+			}
 
 			pivot = FlightCamera.fetch.GetPivot().position;
 			pivotRotation = frameOfReference;
@@ -443,9 +454,26 @@ namespace CameraController_Next
 				position = FlightGlobals.ActiveVessel.transform.position + vesselToCamera.normalized * FlightCamera.fetch.maxDistance;
 		}
 
-		protected virtual void OnVesselChange(Vessel vessel)
+		bool docking = false;
+
+		protected void OnDocking(uint id1, uint id2)
 		{
-			CaptureCamera();
+			docking = (partOfReference != null) ? ((partOfReference.vessel.persistentId == id1) | (partOfReference.vessel.persistentId == id2)) : false;
+		}
+
+		bool undocking = false;
+
+		protected void OnUndocking(Part part)
+		{
+			undocking = (partOfReference != null) ? (part.vessel == partOfReference.vessel) : false;
+		}
+
+		protected void OnVesselChange(Vessel vessel)
+		{
+			CaptureCamera(docking | undocking);
+
+			docking = false;
+			undocking = false;
 		}
 
 		private void CalculateCameraPosition()
