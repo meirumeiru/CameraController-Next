@@ -79,6 +79,8 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="SPHEditorCameraController.cs" />
+    <Compile Include="VABEditorCameraController.cs" />
     <Compile Include="FlightCameraController.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>

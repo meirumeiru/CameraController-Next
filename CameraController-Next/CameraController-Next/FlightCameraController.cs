@@ -1,6 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
 
 using UnityEngine;
 
@@ -22,6 +20,7 @@ namespace CameraController_Next
 		private System.Reflection.MethodInfo updateFoR_Info;
 		private System.Reflection.MethodInfo GetChaseFoR_Info;
 		private System.Reflection.FieldInfo FoRlerp_Info;
+		private System.Reflection.FieldInfo lastFoR_Info;
 		private System.Reflection.FieldInfo terrainPitch_Info;
 		private System.Reflection.FieldInfo meshPitch_Info;
 		private System.Reflection.FieldInfo distance_Info;
@@ -41,46 +40,61 @@ namespace CameraController_Next
 		private GameObject ShadowCamera = null;
 
 
+		// "settings"
+
+		// key bindings
+
+		public static KeyCode OnOffKey = KeyCode.KeypadDivide;
+
+		public static KeyCode SlowKey = KeyCode.KeypadMultiply;
+
+		public static KeyCode UpKey = KeyCode.UpArrow;
+		public static KeyCode DownKey = KeyCode.DownArrow;
+		public static KeyCode LeftKey = KeyCode.LeftArrow;
+		public static KeyCode RightKey = KeyCode.RightArrow;
+
+// ToDo: add other Key's here and load this from a settings file
+
 		// input factors
 
-		static float inputfactor_move = 0.2f;
-		static float mousefactor_move = 0.4f;
+		public static float inputfactor_move = 12f;
+		public static float mousefactor_move = 0.4f;
 
-		static float inputfactor_roll = 1f;
-		static float mousefactor_roll = 0.1f;
+		public static float inputfactor_roll = 56f;
+		public static float mousefactor_roll = 0.04f;
 
-		static float wheelfactor = 10f;
+		public static float wheelfactor = 20f;
 
 		// revert factors
 
-		static float lerpfactor = 2f;
+		public static float lerpfactor = 2f;
 
 		// scroll acceleration
 
-		static float tms = 0.2f; // delta-time
+		public static float tms = 0.2f; // delta-time
 
-		float tm = 0f; // time sum
-		Vector2 tv = Vector2.zero; // current scroll sum
-		float scrollMagnitude = 0f;
+		public float tm = 0f; // time sum
+		public Vector2 tv = Vector2.zero; // current scroll sum
+		public float scrollMagnitude = 0f;
 
 		// position and rotation
 		
-		Quaternion frameOfReference;
-		Part partOfReference;
+		public Quaternion frameOfReference;
+		public Part partOfReference;
 
-		Vector3 position;		// camera
-		Quaternion rotation;	// camera
+		public Vector3 position;		// camera
+		public Quaternion rotation;	// camera
 
-		Vector3 pivot;
-		Quaternion pivotRotation;
+		public Vector3 pivot;
+		public Quaternion pivotRotation;
 
-		Vector3 relPosition;	// position = vessel.position (com oder position, weiss noch nicht) + frameOfReference * relPosition
-		Quaternion relRotation;
+		public Vector3 relPosition;	// position = vessel.position (com oder position, weiss noch nicht) + frameOfReference * relPosition
+		public Quaternion relRotation;
 
-		Vector3 relPivot;
-		Quaternion relPivotRotation;
+		public Vector3 relPivot;
+		public Quaternion relPivotRotation;
 
-		float lerp;
+		public float lerp;
 
 
 		public KerbalFSM fsm;
@@ -138,6 +152,7 @@ namespace CameraController_Next
 			updateFoR_Info = FlightCameraType.GetMethod("updateFoR", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
 			GetChaseFoR_Info = FlightCameraType.GetMethod("GetChaseFoR", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
 			FoRlerp_Info = FlightCameraType.GetField("FoRlerp", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+			lastFoR_Info = FlightCameraType.GetField("lastFoR", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
 			terrainPitch_Info = FlightCameraType.GetField("terrainPitch", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
 			meshPitch_Info = FlightCameraType.GetField("meshPitch", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
 			distance_Info = FlightCameraType.GetField("distance", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
@@ -169,7 +184,7 @@ namespace CameraController_Next
 			st_normal.OnLateUpdate = delegate
 			{
 				// activate camera controller if key is pressed
-				if(Input.GetKeyDown(KeyCode.KeypadDivide))
+				if(Input.GetKeyDown(OnOffKey))
 					fsm.RunEvent(on_activate);
 			};
 			st_normal.OnLeave = delegate(KFSMState to)
@@ -185,6 +200,7 @@ namespace CameraController_Next
 				ShadowCamera.transform.rotation = FlightCamera.fetch.transform.rotation;
 
 				FlightCamera.fetch.DeactivateUpdate();
+				// FlightCamera.fetch.enabled = false; should work too
 
 				CaptureCamera();
 
@@ -199,7 +215,8 @@ namespace CameraController_Next
 				CalculateCameraPosition();
 
 				// process inputs
-				ProcessInput();
+				if(InputLockManager.IsUnlocked(ControlTypes.CAMERACONTROLS) || (FlightDriver.Pause && !KSP.UI.UIMasterController.Instance.IsUIShowing))
+					ProcessInput();
 
 				// set position of the camera
 				FlightCamera.fetch.transform.rotation = rotation;
@@ -213,7 +230,7 @@ namespace CameraController_Next
 					CaptureCamera();
 
 				// deactivate camera controller if key is pressed
-				if(Input.GetKeyDown(KeyCode.KeypadDivide))
+				if(Input.GetKeyDown(OnOffKey))
 					fsm.RunEvent(on_normalize);
 			};
 			st_active.OnLeave = delegate(KFSMState to)
@@ -243,6 +260,7 @@ namespace CameraController_Next
 			st_normalizing.OnLeave = delegate(KFSMState to)
 			{
 				FlightCamera.fetch.ActivateUpdate();
+				// FlightCamera.fetch.enabled = true; should work too
 
 				ScreenMessages.PostScreenMessage("normal camera", 3, ScreenMessageStyle.UPPER_CENTER);
 			};
@@ -303,8 +321,35 @@ namespace CameraController_Next
 
 			switch(FlightCamera.fetch.mode)
 			{
+			case FlightCamera.Modes.AUTO:
+			{
+				switch(FlightCamera.fetch.autoMode)
+				{
+				case FlightCamera.Modes.ORBITAL:
+					updateFoR_Delegate(FlightCamera.fetch.GetCameraFoR(FoRModes.OBT_ABS), FoRlerp);
+					break;
+				case FlightCamera.Modes.FREE:
+					updateFoR_Delegate(FlightCamera.fetch.GetCameraFoR(FoRModes.SRF_NORTH), FoRlerp);
+					break;
+				}
+				FlightCamera.Modes autoModeForVessel = FlightCamera.GetAutoModeForVessel(FlightGlobals.ActiveVessel);
+				if(FlightCamera.fetch.autoMode != autoModeForVessel)
+				{
+					lastFoR_Info.SetValue(FlightCamera.fetch, frameOfReference);
+					FoRlerp_Info.SetValue(FlightCamera.fetch, (float)0f);
+					FlightCamera.fetch.autoMode = autoModeForVessel;
+					break;
+				}
+				break;
+			}
 			case FlightCamera.Modes.FREE:
 				updateFoR_Delegate(FlightCamera.fetch.GetCameraFoR(FoRModes.SRF_NORTH), FoRlerp);
+				break;
+			case FlightCamera.Modes.ORBITAL:
+				if(FlightGlobals.ActiveVessel.radarAltitude < 2000.0)
+					FlightCamera.fetch.setMode(FlightCamera.Modes.CHASE);
+				else
+					updateFoR_Delegate(FlightCamera.fetch.GetCameraFoR(FoRModes.OBT_ABS), FoRlerp);
 				break;
 			case FlightCamera.Modes.CHASE:
 				{
@@ -318,28 +363,6 @@ namespace CameraController_Next
 				else
 					updateFoR_Delegate(FlightCamera.fetch.GetCameraFoR(FoRModes.SHP_REL), FoRlerp);
 				break;
-			case FlightCamera.Modes.ORBITAL:
-				if(FlightGlobals.ActiveVessel.radarAltitude < 2000.0)
-					FlightCamera.fetch.setMode(FlightCamera.Modes.CHASE);
-				else
-					updateFoR_Delegate(FlightCamera.fetch.GetCameraFoR(FoRModes.OBT_ABS), FoRlerp);
-				break;
-			case FlightCamera.Modes.AUTO:
-			{
-				FlightCamera.Modes modes = FlightCamera.fetch.autoMode;
-				if(modes != FlightCamera.Modes.FREE)
-				{
-					if(modes == FlightCamera.Modes.ORBITAL)
-						updateFoR_Delegate(FlightCamera.fetch.GetCameraFoR(FoRModes.OBT_ABS), FoRlerp);
-				}
-				else
-					updateFoR_Delegate(FlightCamera.fetch.GetCameraFoR(FoRModes.SRF_NORTH), FoRlerp);
-				FlightCamera.Modes autoModeForVessel = FlightCamera.GetAutoModeForVessel(FlightGlobals.ActiveVessel);
-				if(FlightCamera.fetch.autoMode == autoModeForVessel)
-					break;
-				FlightCamera.fetch.autoMode = autoModeForVessel;
-				break;
-			}
 			}
 			if(FoRlerp != 1f)
 				FlightCamera.fetch.SetCamCoordsFromPosition(ShadowCamera.transform.position);
@@ -355,7 +378,7 @@ namespace CameraController_Next
 			FlightCamera.fetch.minHeight = Mathf.Lerp(FlightCamera.fetch.minHeightAtMinDist, FlightCamera.fetch.minHeightAtMaxDist, Mathf.InverseLerp(FlightCamera.fetch.minDistance, FlightCamera.fetch.maxDistance, (float)distance_Info.GetValue(FlightCamera.fetch)));
 			FlightCamera.fetch.camPitch = Mathf.Min(FlightCamera.fetch.maxPitch, FlightCamera.fetch.camPitch);
 			if((FlightCamera.fetch.FoRMode == FoRModes.SRF_HDG)
-			|| (FlightCamera.fetch.FoRMode == 0)
+			|| (FlightCamera.fetch.FoRMode == FoRModes.SRF_NORTH)
 			|| (FlightCamera.fetch.FoRMode == FoRModes.SRF_VEL))
 			{
 				RaycastHit hit;
@@ -369,19 +392,19 @@ namespace CameraController_Next
 			float num = 0f;
 			switch(FlightCamera.fetch.targetMode)
 			{
+			case FlightCamera.TargetMode.None:
+				num = FlightGlobals.getAltitudeAtPos(((Transform)pivot_Info.GetValue(FlightCamera.fetch)).TransformPoint((Vector3)endPos_Info.GetValue(FlightCamera.fetch)));
+				endPos_Info.SetValue(FlightCamera.fetch, Vector3.zero);
+				break;
 			case FlightCamera.TargetMode.Vessel:
-				num = FlightGlobals.getAltitudeAtPos(ShadowCamera.transform.TransformPoint((Vector3)endPos_Info.GetValue(FlightCamera.fetch)), FlightCamera.fetch.vesselTarget.mainBody);
+				num = FlightGlobals.getAltitudeAtPos(((Transform)pivot_Info.GetValue(FlightCamera.fetch)).TransformPoint((Vector3)endPos_Info.GetValue(FlightCamera.fetch)), FlightCamera.fetch.vesselTarget.mainBody);
 				endPos_Info.SetValue(FlightCamera.fetch, FlightCamera.fetch.vesselTarget.localCoM);
 				break;
 			case FlightCamera.TargetMode.Part:
-				num = FlightGlobals.getAltitudeAtPos(ShadowCamera.transform.TransformPoint((Vector3)endPos_Info.GetValue(FlightCamera.fetch)), FlightCamera.fetch.partTarget.vessel.mainBody);
+				num = FlightGlobals.getAltitudeAtPos(((Transform)pivot_Info.GetValue(FlightCamera.fetch)).TransformPoint((Vector3)endPos_Info.GetValue(FlightCamera.fetch)), FlightCamera.fetch.partTarget.vessel.mainBody);
 				endPos_Info.SetValue(FlightCamera.fetch, FlightCamera.fetch.partTarget.CoMOffset);
 				break;
 			case FlightCamera.TargetMode.Transform:
-				num = FlightGlobals.getAltitudeAtPos(ShadowCamera.transform.TransformPoint((Vector3)endPos_Info.GetValue(FlightCamera.fetch)));
-				endPos_Info.SetValue(FlightCamera.fetch, Vector3.zero);
-				break;
-			case FlightCamera.TargetMode.None:
 				num = FlightGlobals.getAltitudeAtPos(((Transform)pivot_Info.GetValue(FlightCamera.fetch)).TransformPoint((Vector3)endPos_Info.GetValue(FlightCamera.fetch)));
 				endPos_Info.SetValue(FlightCamera.fetch, Vector3.zero);
 				break;
@@ -392,9 +415,7 @@ namespace CameraController_Next
 				endPitch_Info.SetValue(FlightCamera.fetch, Math.Max(FlightCamera.fetch.camPitch, (float)terrainPitch_Info.GetValue(FlightCamera.fetch)));
 			((Transform)pivot_Info.GetValue(FlightCamera.fetch)).rotation = frameOfReference * Quaternion.AngleAxis(FlightCamera.fetch.camHdg * 57.29578f, Vector3.up) * Quaternion.AngleAxis((float)endPitch_Info.GetValue(FlightCamera.fetch) * 57.29578f, Vector3.right);
 			if(FlightCamera.fetch.targetMode != 0)
-			{
 				((Transform)pivot_Info.GetValue(FlightCamera.fetch)).localPosition = Vector3.Lerp(((Transform)pivot_Info.GetValue(FlightCamera.fetch)).localPosition, (Vector3)endPos_Info.GetValue(FlightCamera.fetch), FlightCamera.fetch.pivotTranslateSharpness * Time.unscaledDeltaTime);
-			}
 			if(((Transform)target_Info.GetValue(FlightCamera.fetch)) != ((Transform)pivot_Info.GetValue(FlightCamera.fetch)))
 			{
 				Rigidbody _rigidbody;
@@ -437,21 +458,11 @@ namespace CameraController_Next
 			ShadowCamera.transform.Rotate(Vector3.right, (float)offsetPitch_Info.GetValue(FlightCamera.fetch) * 57.29578f, Space.Self);
 			if(!GameSettings.TRACKIR_ENABLED)
 				return;
-/* FEHLER, was ist IR?
-			if(!FlightCamera.fetch.TrackIRisActive())
-				return;
-	FlightCamera.fetch.transform.Rotate(Vector3.up, FlightCamera.fetch.tIRyaw * 57.29578f, Space.Self);
-	FlightCamera.fetch.transform.Rotate(Vector3.right, FlightCamera.fetch.tIRpitch * 57.29578f, Space.Self);
-	FlightCamera.fetch.transform.Rotate(Vector3.forward, FlightCamera.fetch.tIRroll * 57.29578f, Space.Self);
-*/
-		}
-
-		private void ClampPosition()
-		{
-			Vector3 vesselToCamera = position - FlightGlobals.ActiveVessel.transform.position;
-
-			if(vesselToCamera.sqrMagnitude > (FlightCamera.fetch.maxDistance * FlightCamera.fetch.maxDistance))
-				position = FlightGlobals.ActiveVessel.transform.position + vesselToCamera.normalized * FlightCamera.fetch.maxDistance;
+	//		if(!FlightCamera.fetch.TrackIRisActive())
+	//			return;
+	//		ShadowCamera.transform.Rotate(Vector3.up, FlightCamera.fetch.tIRyaw * 57.29578f, Space.Self);
+	//		ShadowCamera.transform.Rotate(Vector3.right, FlightCamera.fetch.tIRpitch * 57.29578f, Space.Self);
+	//		ShadowCamera.transform.Rotate(Vector3.forward, FlightCamera.fetch.tIRroll * 57.29578f, Space.Self);
 		}
 
 		bool docking = false;
@@ -506,10 +517,11 @@ namespace CameraController_Next
 
 			// Input
 
-			float slowFactor = Input.GetKey(KeyCode.KeypadMultiply) ? 0.1f : 1f; // if you want to move the camera very slow e.g. for filming or precise movements
+			float slowFactor = Input.GetKey(SlowKey) ? 0.2f : 1f; // if you want to move the camera very slow e.g. for filming or precise movements
 
 			float hdg = 0; float pitch = 0; float rot = 0; float rot2 = 0;
 			bool hasInput = false;
+			bool totalHasInput = false;
 
 			//////////////////////////////
 			// Translation
@@ -517,31 +529,31 @@ namespace CameraController_Next
 			{
 			hasInput = false;
 
-			Vector3 positionToPivot = pivot - position;
+			Vector3 positionNew = position;
 
 			if(Input.GetKey(KeyCode.RightShift))
 			{
-				if(Input.GetKey(KeyCode.RightArrow))
+				if(Input.GetKey(RightKey))
 				{
-					position += rotation * Vector3.right * inputfactor_move * slowFactor;
+					positionNew += rotation * Vector3.right * inputfactor_move * slowFactor * Time.deltaTime;
 					hasInput = true;
 				}
 				
-				if(Input.GetKey(KeyCode.LeftArrow))
+				if(Input.GetKey(LeftKey))
 				{
-					position -= rotation * Vector3.right * inputfactor_move * slowFactor;
+					positionNew -= rotation * Vector3.right * inputfactor_move * slowFactor * Time.deltaTime;
 					hasInput = true;
 				}
 
-				if(Input.GetKey(KeyCode.UpArrow))
+				if(Input.GetKey(UpKey))
 				{
-					position += rotation * Vector3.up * inputfactor_move * slowFactor;
+					positionNew += rotation * Vector3.up * inputfactor_move * slowFactor * Time.deltaTime;
 					hasInput = true;
 				}
 
-				if(Input.GetKey(KeyCode.DownArrow))
+				if(Input.GetKey(DownKey))
 				{
-					position -= rotation * Vector3.up * inputfactor_move * slowFactor;
+					positionNew -= rotation * Vector3.up * inputfactor_move * slowFactor * Time.deltaTime;
 					hasInput = true;
 				}
 
@@ -552,13 +564,13 @@ namespace CameraController_Next
 
 					if(x != 0f)
 					{
-						position -= rotation * Vector3.right * x * mousefactor_move * slowFactor;
+						positionNew -= rotation * Vector3.right * x * mousefactor_move * slowFactor;
 						hasInput = true;
 					}
 
 					if(y != 0)
 					{
-						position -= rotation * Vector3.up * y * mousefactor_move * slowFactor;
+						positionNew -= rotation * Vector3.up * y * mousefactor_move * slowFactor;
 						hasInput = true;
 					}
 				}
@@ -571,25 +583,42 @@ namespace CameraController_Next
 
 				if(x != 0f)
 				{
-					position -= rotation * Vector3.right * x * mousefactor_move * slowFactor;
+					positionNew -= rotation * Vector3.right * x * mousefactor_move * slowFactor;
 					hasInput = true;
 				}
 
 				if(y != 0)
 				{
-					position -= rotation * Vector3.up * y * mousefactor_move * slowFactor;
+					positionNew -= rotation * Vector3.up * y * mousefactor_move * slowFactor;
 					hasInput = true;
 				}
 			}
 
 			if(hasInput)
 			{
-				ClampPosition();
+				Vector3 pivotNew = positionNew + (pivot - position);
 
-				pivot = position + positionToPivot;
+				float distanceNew =
+					(pivotNew - FlightGlobals.ActiveVessel.transform.position).magnitude
+					+ (positionNew - FlightGlobals.ActiveVessel.transform.position).magnitude;
+
+				if(distanceNew > FlightCamera.fetch.maxDistance)
+				{
+					float diff = (positionNew - position).magnitude;
+					float maxDiff = diff - (distanceNew - FlightCamera.fetch.maxDistance);
+
+					positionNew = position + (positionNew - position) * (maxDiff / diff);
+
+					pivotNew = positionNew + (pivot - position);
+				}
+
+				position = positionNew;
+				pivot = pivotNew;
 
 				relPosition = Quaternion.Inverse(frameOfReference) * (position - partOfReference.transform.position);
 				relPivot = Quaternion.Inverse(frameOfReference) * (pivot - partOfReference.transform.position);
+
+				totalHasInput = true;
 			}
 			}
 
@@ -602,27 +631,27 @@ namespace CameraController_Next
 			if(Input.GetKey(KeyCode.RightControl)
 			&& !Input.GetKey(KeyCode.RightShift))
 			{
-				if(Input.GetKey(KeyCode.RightArrow))
+				if(Input.GetKey(RightKey))
 				{
-					rot -= (Mathf.PI / 180f) * inputfactor_roll * slowFactor;
+					rot -= (Mathf.PI / 180f) * inputfactor_roll * slowFactor * Time.deltaTime;
 					hasInput = true;
 				}
 
-				if(Input.GetKey(KeyCode.LeftArrow))
+				if(Input.GetKey(LeftKey))
 				{
-					rot += (Mathf.PI / 180f) * inputfactor_roll * slowFactor;
+					rot += (Mathf.PI / 180f) * inputfactor_roll * slowFactor * Time.deltaTime;
 					hasInput = true;
 				}
 
-				if(Input.GetKey(KeyCode.UpArrow))
+				if(Input.GetKey(UpKey))
 				{
-					rot2 += (Mathf.PI / 180f) * inputfactor_roll * slowFactor;
+					rot2 += (Mathf.PI / 180f) * inputfactor_roll * slowFactor * Time.deltaTime;
 					hasInput = true;
 				}
 
-				if(Input.GetKey(KeyCode.DownArrow))
+				if(Input.GetKey(DownKey))
 				{
-					rot2 -= (Mathf.PI / 180f) * inputfactor_roll * slowFactor;
+					rot2 -= (Mathf.PI / 180f) * inputfactor_roll * slowFactor * Time.deltaTime;
 					hasInput = true;
 				}
 
@@ -665,27 +694,29 @@ namespace CameraController_Next
 
 			if(hasInput)
 			{
-				Vector3 localPivotToPosition = Quaternion.Inverse(rotation) * (position - pivot);
+				Vector3 localPivotToPosition = Quaternion.Inverse(pivotRotation) * (position - pivot);
 
 				pivotRotation =
 					Quaternion.AngleAxis(rot2 * 57.29578f, rotation * Vector3.right)
 					* Quaternion.AngleAxis(rot * 57.29578f, rotation * Vector3.forward)
 					* pivotRotation;
 
-				relPivotRotation = Quaternion.Inverse(frameOfReference) * pivotRotation;
+				position = pivot + pivotRotation * localPivotToPosition;
 
 				rotation =
 					Quaternion.AngleAxis(rot2 * 57.29578f, rotation * Vector3.right)
 					* Quaternion.AngleAxis(rot * 57.29578f, rotation * Vector3.forward)
 					* rotation;
 
-				relRotation = Quaternion.Inverse(frameOfReference) * rotation;
-
-				position = pivot + rotation * localPivotToPosition;
-
-				ClampPosition();
-
 				relPosition = Quaternion.Inverse(frameOfReference) * (position - partOfReference.transform.position);
+
+				relRotation = Quaternion.Inverse(frameOfReference) * rotation;
+				relPivotRotation = Quaternion.Inverse(frameOfReference) * pivotRotation;
+
+				// reset the pivotRotation (optional, but makes it easier to control)
+				relPivotRotation = Quaternion.Inverse(frameOfReference) * FlightCamera.fetch.transform.rotation;
+
+				totalHasInput = true;
 			}
 			}
 
@@ -697,27 +728,27 @@ namespace CameraController_Next
 
 			if(!Input.GetKey(KeyCode.RightControl) && !Input.GetKey(KeyCode.RightShift))
 			{
-				if(Input.GetKey(KeyCode.RightArrow))
+				if(Input.GetKey(RightKey))
 				{
-					hdg -= (Mathf.PI / 180f) * inputfactor_roll * slowFactor;
+					hdg -= (Mathf.PI / 180f) * inputfactor_roll * slowFactor * Time.deltaTime;
 					hasInput = true;
 				}
 
-				if(Input.GetKey(KeyCode.LeftArrow))
+				if(Input.GetKey(LeftKey))
 				{
-					hdg += (Mathf.PI / 180f) * inputfactor_roll * slowFactor;
+					hdg += (Mathf.PI / 180f) * inputfactor_roll * slowFactor * Time.deltaTime;
 					hasInput = true;
 				}
 
-				if(Input.GetKey(KeyCode.UpArrow))
+				if(Input.GetKey(UpKey))
 				{
-					pitch += (Mathf.PI / 180f) * inputfactor_roll * slowFactor;
+					pitch += (Mathf.PI / 180f) * inputfactor_roll * slowFactor * Time.deltaTime;
 					hasInput = true;
 				}
 
-				if(Input.GetKey(KeyCode.DownArrow))
+				if(Input.GetKey(DownKey))
 				{
-					pitch -= (Mathf.PI / 180f) * inputfactor_roll * slowFactor;
+					pitch -= (Mathf.PI / 180f) * inputfactor_roll * slowFactor * Time.deltaTime;
 					hasInput = true;
 				}
 
@@ -742,18 +773,18 @@ namespace CameraController_Next
 
 			if(hasInput)
 			{
-				Vector3 localPivotToPosition = Quaternion.Inverse(rotation) * (position - pivot);
+				Vector3 localPositionToPivot = Quaternion.Inverse(rotation) * (pivot - position);
 
 				rotation = rotation * Quaternion.AngleAxis(pitch * 57.29578f, Vector3.right);
 				rotation = Quaternion.AngleAxis(hdg * 57.29578f, pivotRotation * Vector3.up) * rotation;
 
-				relRotation = Quaternion.Inverse(frameOfReference) * rotation;
-
-				position = pivot + rotation * localPivotToPosition;
-
-				ClampPosition();
+				position = pivot - rotation * localPositionToPivot;
 
 				relPosition = Quaternion.Inverse(frameOfReference) * (position - partOfReference.transform.position);
+
+				relRotation = Quaternion.Inverse(frameOfReference) * rotation;
+
+				totalHasInput = true;
 			}
 			}
 
@@ -769,18 +800,49 @@ namespace CameraController_Next
 
 				z *= wheelfactor * slowFactor;
 
-				Vector3 positionToPivot = pivot - position;
+				Vector3 positionNew = position;
 
-				position += rotation * Vector3.forward * z;
-
-				ClampPosition();
+				positionNew += rotation * Vector3.forward * z;
 
 				if(Input.GetKey(KeyCode.RightShift) || Input.GetMouseButton(3))
 				{
 					//////////////////////////////
 					// Translation
 
-					pivot = position + positionToPivot;
+					Vector3 pivotNew = positionNew + (pivot - position);
+
+					float distanceNew =
+						(pivotNew - FlightGlobals.ActiveVessel.transform.position).magnitude
+						+ (positionNew - FlightGlobals.ActiveVessel.transform.position).magnitude;
+
+					if(distanceNew > FlightCamera.fetch.maxDistance)
+					{
+						float diff = (positionNew - position).magnitude;
+						float maxDiff = diff - (distanceNew - FlightCamera.fetch.maxDistance);
+
+						positionNew = position + (positionNew - position) * (maxDiff / diff);
+
+						pivotNew = positionNew + (pivot - position);
+					}
+
+					position = positionNew;
+					pivot = pivotNew;
+				}
+				else
+				{
+					float distanceNew =
+						(pivot - FlightGlobals.ActiveVessel.transform.position).magnitude
+						+ (positionNew - FlightGlobals.ActiveVessel.transform.position).magnitude;
+
+					if(distanceNew > FlightCamera.fetch.maxDistance)
+					{
+						float diff = (positionNew - position).magnitude;
+						float maxDiff = diff - (distanceNew - FlightCamera.fetch.maxDistance);
+
+						positionNew = position + (positionNew - position) * (maxDiff / diff);
+					}
+
+					position = positionNew;
 				}
 
 				relPosition = Quaternion.Inverse(frameOfReference) * (position - partOfReference.transform.position);
@@ -793,29 +855,49 @@ namespace CameraController_Next
 			{
 				hasInput = false;
 
-				Vector3 positionToPivot = pivot - position;
+				Vector3 positionNew = position;
 
 				if(GameSettings.ZOOM_IN.GetKey())
 				{
-					position += rotation * Vector3.forward * inputfactor_move * slowFactor;
+					positionNew += rotation * Vector3.forward * inputfactor_move * slowFactor * Time.deltaTime;
 					hasInput = true;
 				}
 
 				if(GameSettings.ZOOM_OUT.GetKey())
 				{
-					position -= rotation * Vector3.forward * inputfactor_move * slowFactor;
+					positionNew -= rotation * Vector3.forward * inputfactor_move * slowFactor * Time.deltaTime;
 					hasInput = true;
 				}
 
 				if(hasInput)
 				{
-					ClampPosition();
+					float distanceNew =
+						(pivot - FlightGlobals.ActiveVessel.transform.position).magnitude
+						+ (positionNew - FlightGlobals.ActiveVessel.transform.position).magnitude;
 
-					pivot = position + positionToPivot;
+					if(distanceNew > FlightCamera.fetch.maxDistance)
+					{
+						float diff = (positionNew - position).magnitude;
+						float maxDiff = diff - (distanceNew - FlightCamera.fetch.maxDistance);
+
+						positionNew = position + (positionNew - position) * (maxDiff / diff);
+					}
+
+					position = positionNew;
+
+					totalHasInput = true;
 				}
 
 				relPosition = Quaternion.Inverse(frameOfReference) * (position - partOfReference.transform.position);
 				relPivot = Quaternion.Inverse(frameOfReference) * (pivot - partOfReference.transform.position);
+			}
+
+			// correct rotation (mainly because of rounding errors during zooming we would otherwise end up pointing to wrong directions)
+			if(totalHasInput)
+			{
+				rotation = Quaternion.LookRotation(pivot - position, rotation * Vector3.up);
+
+				relRotation = Quaternion.Inverse(frameOfReference) * rotation;
 			}
 		}
 
