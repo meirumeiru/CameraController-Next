@@ -53,7 +53,7 @@ namespace CameraController_Next
 		public static KeyCode LeftKey = KeyCode.LeftArrow;
 		public static KeyCode RightKey = KeyCode.RightArrow;
 
-// ToDo: add other Key's here and load this from a settings file
+// ToDo: add other Key's here
 
 		// input factors
 
@@ -83,12 +83,12 @@ namespace CameraController_Next
 		public Part partOfReference;
 
 		public Vector3 position;		// camera
-		public Quaternion rotation;	// camera
+		public Quaternion rotation;		// camera
 
 		public Vector3 pivot;
 		public Quaternion pivotRotation;
 
-		public Vector3 relPosition;	// position = vessel.position (com oder position, weiss noch nicht) + frameOfReference * relPosition
+		public Vector3 relPosition;		// position = vessel.position (com oder position, weiss noch nicht) + frameOfReference * relPosition
 		public Quaternion relRotation;
 
 		public Vector3 relPivot;
@@ -110,8 +110,39 @@ namespace CameraController_Next
 		public KFSMEvent on_normalized;
 
 
+		public static void LoadSettings()
+		{
+			ConfigNode node = ConfigNode.Load(KSPUtil.ApplicationRootPath + "GameData/CameraControllerNext/Plugins/settings.cfg");
+
+			if(node != null)
+				node = node.GetNode("CameraControllerNextConfig");
+
+			if(node != null)
+			{
+				if(!Enum.TryParse(node.GetValue("OnOffKey"), out OnOffKey))
+					OnOffKey = KeyCode.KeypadDivide;
+
+				if(!Enum.TryParse(node.GetValue("SlowKey"), out SlowKey))
+					SlowKey = KeyCode.KeypadMultiply;
+
+				if(!Enum.TryParse(node.GetValue("UpKey"), out UpKey))
+					UpKey = KeyCode.UpArrow;
+
+				if(!Enum.TryParse(node.GetValue("DownKey"), out DownKey))
+					DownKey = KeyCode.DownArrow;
+
+				if(!Enum.TryParse(node.GetValue("LeftKey"), out LeftKey))
+					LeftKey = KeyCode.LeftArrow;
+
+				if(!Enum.TryParse(node.GetValue("RightKey"), out RightKey))
+					RightKey = KeyCode.RightArrow;
+			}
+		}
+
 		private void Awake()
 		{
+			LoadSettings();
+
 			if(!HighLogic.LoadedSceneIsFlight)
 				ControllerInstance = null;
 			else

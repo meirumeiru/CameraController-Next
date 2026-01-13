@@ -2,6 +2,7 @@
 
 using UnityEngine;
 using UnityEngine.EventSystems;
+using KSP.IO;
 
 namespace CameraController_Next
 {
@@ -88,8 +89,24 @@ namespace CameraController_Next
 		public KFSMEvent on_normalized;
 
 
+		public static void LoadSettings()
+		{
+			ConfigNode node = ConfigNode.Load(KSPUtil.ApplicationRootPath + "GameData/CameraControllerNext/Plugins/settings.cfg");
+
+			if(node != null)
+				node = node.GetNode("CameraControllerNextConfig");
+
+			if(node != null)
+			{
+				if(!Enum.TryParse(node.GetValue("OnOffKey"), out OnOffKey))
+					OnOffKey = KeyCode.KeypadDivide;
+			}
+		}
+
 		private void Awake()
 		{
+			LoadSettings();
+
 			if(!HighLogic.LoadedSceneIsEditor || (EditorDriver.editorFacility != EditorFacility.VAB))
 				ControllerInstance = null;
 			else
