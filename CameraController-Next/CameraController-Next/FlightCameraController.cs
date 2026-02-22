@@ -1,6 +1,7 @@
 ﻿using System;
 
 using UnityEngine;
+using UnityEngine.EventSystems;
 
 namespace CameraController_Next
 {
@@ -239,11 +240,22 @@ namespace CameraController_Next
 			};
 			st_active.OnLateUpdate = delegate
 			{
+				FoRModes old = FlightCamera.fetch.FoRMode;
+
 				// calculate the original position of the camera
 				ShadowLateUpdate();
 
+				if(FlightCamera.fetch.FoRMode != old)
+				{
+					// calculate old version
+					CalculateCameraPosition(old);
+
+					// capture new setting
+					CaptureCamera(true);
+				}
+
 				// calculate our position of the camera
-				CalculateCameraPosition();
+				CalculateCameraPosition(FlightCamera.fetch.FoRMode);
 
 				// process inputs
 				if(InputLockManager.IsUnlocked(ControlTypes.CAMERACONTROLS) || (FlightDriver.Pause && !KSP.UI.UIMasterController.Instance.IsUIShowing))
@@ -258,7 +270,11 @@ namespace CameraController_Next
 
 				// switch reference to new part in case it changed
 				if(FlightCamera.fetch.Target && (partOfReference.transform != FlightCamera.fetch.Target))
-					CaptureCamera();
+				{
+					// OPTION: point the camera to the new part?
+
+					CaptureCamera(true);
+				}
 
 				// deactivate camera controller if key is pressed
 				if(Input.GetKeyDown(OnOffKey))
@@ -278,7 +294,7 @@ namespace CameraController_Next
 			{
 				ShadowLateUpdate();
 
-				CalculateCameraPosition();
+				CalculateCameraPosition(FlightCamera.fetch.FoRMode);
 
 				lerp += Time.deltaTime * lerpfactor; // revert in 0.5 seconds
 
@@ -330,16 +346,18 @@ namespace CameraController_Next
 			{
 				position = FlightCamera.fetch.transform.position;
 				rotation = FlightCamera.fetch.transform.rotation;
-			}
 
-			pivot = FlightCamera.fetch.GetPivot().position;
-			pivotRotation = frameOfReference;
+				pivot = FlightCamera.fetch.GetPivot().position;
+				pivotRotation = frameOfReference;
+			}
 
 			relPosition = Quaternion.Inverse(frameOfReference) * (position - partOfReference.transform.position);
 			relRotation = Quaternion.Inverse(frameOfReference) * rotation;
 	
 			relPivot = Quaternion.Inverse(frameOfReference) * (pivot - partOfReference.transform.position);
-			relPivotRotation = Quaternion.identity;
+
+			if(!keepPosition)
+				relPivotRotation = Quaternion.identity;
 		}
 
 		private void ShadowLateUpdate()
@@ -518,9 +536,9 @@ namespace CameraController_Next
 			undocking = false;
 		}
 
-		private void CalculateCameraPosition()
+		private void CalculateCameraPosition(FoRModes FoRMode)
 		{
-			frameOfReference = FlightGlobals.GetFoR(FlightCamera.fetch.FoRMode,
+			frameOfReference = FlightGlobals.GetFoR(FoRMode,
 				partOfReference.transform, partOfReference.vessel.orbit);
 
 			position = partOfReference.transform.position + frameOfReference * relPosition;
@@ -819,7 +837,8 @@ namespace CameraController_Next
 			}
 			}
 
-			if(GameSettings.AXIS_MOUSEWHEEL.GetAxis() != 0f)
+			if((GameSettings.AXIS_MOUSEWHEEL.GetAxis() != 0f)
+			&& !EventSystem.current.IsPointerOverGameObject())
 			{
 				//////////////////////////////
 				// Zoom (or Translation)

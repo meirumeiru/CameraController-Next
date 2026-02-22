@@ -244,6 +244,9 @@ namespace CameraController_Next
 
 		private void ProcessInput()
 		{
+			if(!InputLockManager.IsUnlocked(ControlTypes.CAMERACONTROLS) || EventSystem.current.IsPointerOverGameObject())
+				return;
+
 			if(GameSettings.AXIS_MOUSEWHEEL.GetAxis() != 0f)
 			{
 				if(Input.GetKey(KeyCode.LeftControl) | Input.GetKey(KeyCode.RightControl))
