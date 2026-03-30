@@ -78,6 +78,10 @@ namespace CameraController_Next
 		public Vector2 tv = Vector2.zero; // current scroll sum
 		public float scrollMagnitude = 0f;
 
+		// vessel change
+
+		public static float closeDistance = 10f;
+
 		// position and rotation
 		
 		public Quaternion frameOfReference;
@@ -156,6 +160,8 @@ namespace CameraController_Next
 			GameEvents.onVesselChange.Add(OnVesselChange);
 
 			GameEvents.onVesselDocking.Add(OnDocking);
+			GameEvents.onDockingComplete.Add(OnDocked);
+
 			GameEvents.onPartUndock.Add(OnUndocking);
 			GameEvents.onPartDeCouple.Add(OnUndocking);
 
@@ -173,9 +179,11 @@ namespace CameraController_Next
 	//		GameEvents.OnCameraChange.Remove(onCamChange);
 			GameEvents.onVesselChange.Remove(OnVesselChange);
 
-			GameEvents.onVesselDocking.Add(OnDocking);
-			GameEvents.onPartUndock.Add(OnUndocking);
-			GameEvents.onPartDeCouple.Add(OnUndocking);
+			GameEvents.onVesselDocking.Remove(OnDocking);
+			GameEvents.onDockingComplete.Remove(OnDocked);
+
+			GameEvents.onPartUndock.Remove(OnUndocking);
+			GameEvents.onPartDeCouple.Remove(OnUndocking);
 		}
 
 		private void Init()
@@ -358,6 +366,8 @@ namespace CameraController_Next
 
 			if(!keepPosition)
 				relPivotRotation = Quaternion.identity;
+
+			currentVessel = FlightGlobals.ActiveVessel;
 		}
 
 		private void ShadowLateUpdate()
@@ -514,23 +524,59 @@ namespace CameraController_Next
 	//		ShadowCamera.transform.Rotate(Vector3.forward, FlightCamera.fetch.tIRroll * 57.29578f, Space.Self);
 		}
 
-		bool docking = false;
+		private bool docking = false;
+
+		private bool dockingPos = false;
+
+		private Part targetPart;
+		private Vector3 pivotPosition;
+		private Vector3 cameraPosition;
+		private Quaternion cameraRotation;
 
 		protected void OnDocking(uint id1, uint id2)
 		{
 			docking = (partOfReference != null) ? ((partOfReference.vessel.persistentId == id1) | (partOfReference.vessel.persistentId == id2)) : false;
+
+			if(dockingPos = docking)
+			{
+				targetPart = (FlightCamera.fetch.targetMode == FlightCamera.TargetMode.Part) ? FlightCamera.fetch.partTarget : null;
+
+				pivotPosition = FlightCamera.fetch.GetPivot().position;
+				cameraPosition = FlightCamera.fetch.GetCameraTransform().position;
+				cameraRotation = FlightCamera.fetch.GetCameraTransform().rotation;
+			}
 		}
 
-		bool undocking = false;
+		protected void OnDocked(GameEvents.FromToAction<Part, Part> partAction)
+		{
+			if(dockingPos)
+			{
+				if(targetPart)
+					FlightCamera.fetch.SetTargetPart(targetPart);
+
+				FlightCamera.fetch.GetPivot().position = pivotPosition;
+				FlightCamera.fetch.SetCamCoordsFromPosition(cameraPosition);
+				FlightCamera.fetch.GetCameraTransform().position = cameraPosition;
+				FlightCamera.fetch.GetCameraTransform().rotation = cameraRotation;
+
+				dockingPos = false;
+			}
+		}
+
+		private bool undocking = false;
 
 		protected void OnUndocking(Part part)
 		{
 			undocking = (partOfReference != null) ? (part.vessel == partOfReference.vessel) : false;
 		}
 
+		private Vessel currentVessel;
+
 		protected void OnVesselChange(Vessel vessel)
 		{
-			CaptureCamera(docking | undocking);
+			bool closetogether = currentVessel ? ((vessel.transform.position - currentVessel.transform.position).magnitude < closeDistance) : false;
+
+			CaptureCamera(docking | undocking | closetogether);
 
 			docking = false;
 			undocking = false;
