@@ -66,6 +66,8 @@ namespace CameraController_Next
 
 		public static float wheelfactor = 20f;
 
+		public static float distancefactor = 0.067f; 
+
 		// revert factors
 
 		public static float lerpfactor = 2f;
@@ -626,29 +628,31 @@ namespace CameraController_Next
 
 			Vector3 positionNew = position;
 
+			float dfactor = (pivot - position).magnitude * distancefactor;
+
 			if(Input.GetKey(KeyCode.RightShift))
 			{
 				if(Input.GetKey(RightKey))
 				{
-					positionNew += rotation * Vector3.right * inputfactor_move * slowFactor * Time.deltaTime;
+					positionNew += rotation * Vector3.right * inputfactor_move * slowFactor * Time.deltaTime * dfactor;
 					hasInput = true;
 				}
 				
 				if(Input.GetKey(LeftKey))
 				{
-					positionNew -= rotation * Vector3.right * inputfactor_move * slowFactor * Time.deltaTime;
+					positionNew -= rotation * Vector3.right * inputfactor_move * slowFactor * Time.deltaTime * dfactor;
 					hasInput = true;
 				}
 
 				if(Input.GetKey(UpKey))
 				{
-					positionNew += rotation * Vector3.up * inputfactor_move * slowFactor * Time.deltaTime;
+					positionNew += rotation * Vector3.up * inputfactor_move * slowFactor * Time.deltaTime * dfactor;
 					hasInput = true;
 				}
 
 				if(Input.GetKey(DownKey))
 				{
-					positionNew -= rotation * Vector3.up * inputfactor_move * slowFactor * Time.deltaTime;
+					positionNew -= rotation * Vector3.up * inputfactor_move * slowFactor * Time.deltaTime * dfactor;
 					hasInput = true;
 				}
 
@@ -659,13 +663,13 @@ namespace CameraController_Next
 
 					if(x != 0f)
 					{
-						positionNew -= rotation * Vector3.right * x * mousefactor_move * slowFactor;
+						positionNew -= rotation * Vector3.right * x * mousefactor_move * slowFactor * dfactor;
 						hasInput = true;
 					}
 
 					if(y != 0)
 					{
-						positionNew -= rotation * Vector3.up * y * mousefactor_move * slowFactor;
+						positionNew -= rotation * Vector3.up * y * mousefactor_move * slowFactor * dfactor;
 						hasInput = true;
 					}
 				}
@@ -678,13 +682,13 @@ namespace CameraController_Next
 
 				if(x != 0f)
 				{
-					positionNew -= rotation * Vector3.right * x * mousefactor_move * slowFactor;
+					positionNew -= rotation * Vector3.right * x * mousefactor_move * slowFactor * dfactor;
 					hasInput = true;
 				}
 
 				if(y != 0)
 				{
-					positionNew -= rotation * Vector3.up * y * mousefactor_move * slowFactor;
+					positionNew -= rotation * Vector3.up * y * mousefactor_move * slowFactor * dfactor;
 					hasInput = true;
 				}
 			}
@@ -892,7 +896,7 @@ namespace CameraController_Next
 				float sm = 0.3f + Mathf.Min(scrollMagnitude / 4f, 0.7f);
 				float z = sm * GameSettings.AXIS_MOUSEWHEEL.GetAxis();
 
-				z *= (pivot - position).magnitude * 0.067f; // distance factor
+				z *= (pivot - position).magnitude * distancefactor;
 
 				z *= wheelfactor * slowFactor;
 
