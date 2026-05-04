@@ -2,7 +2,6 @@
 
 using UnityEngine;
 using UnityEngine.EventSystems;
-using KSP.IO;
 
 namespace CameraController_Next
 {
@@ -28,6 +27,9 @@ namespace CameraController_Next
 
 		public float minDistance = 3f;
 		public float maxDistance = 35f;
+
+		public float maxOffset = 25.5f;
+		public float maxRealDistance = 30f;
 
 
 		public float orbitSensitivity = 0.05f;
@@ -59,6 +61,7 @@ namespace CameraController_Next
 
 		public Vector3 originalPosition;
 		public Quaternion originalRotation;
+		public float originalDistance;
 
 		public float distance;
 
@@ -183,18 +186,43 @@ namespace CameraController_Next
 			st_normalizing = new KFSMState("normalizing");
 			st_normalizing.OnEnter = delegate(KFSMState from)
 			{
+				// set camera to our values instead of returning to original values
+
+				Vector3 camCoordsFromPosition = KSPCameraUtil.GetCamCoordsFromPosition(vab.transform.position, Vector3.up * scrollHeight, Quaternion.identity);
+
+				camPitch = camCoordsFromPosition.x;
+				camHdg = camCoordsFromPosition.y;
+
+				originalDistance = camCoordsFromPosition.z;
+
+				originalRotation = Quaternion.AngleAxis(camHdg * 57.29578f, Vector3.up);
+				originalRotation *= Quaternion.AngleAxis(camPitch * 57.29578f, Vector3.right);
+
+				originalPosition = EditorBounds.ClampToCameraBounds(Vector3.up * scrollHeight, endRot * Vector3.forward, ref clampedScrollHeight);
+
 				lerp = 0f;
 			};
 			st_normalizing.OnLateUpdate = delegate
 			{
 				lerp += Time.deltaTime * lerpfactor; // revert in 0.5 seconds
 
-				Transform cameraTransform = vab.GetCameraTransform();
-				cameraTransform.position = Vector3.Lerp(endPos, originalPosition, lerp);
-				cameraTransform.rotation = Quaternion.Lerp(endRot, originalRotation, lerp);
+				Transform pivotTransform = vab.GetCameraTransform();
+
+				pivotTransform.position = Vector3.Lerp(endPos, originalPosition, lerp);
+				pivotTransform.rotation = Quaternion.Lerp(endRot, originalRotation, lerp);
+				vab.transform.localPosition = Vector3.Lerp(Vector3.back * distance, Vector3.back * originalDistance, lerp);
 
 				if(lerp >= 1.0f)
+				{
+					// set camera to our values instead of returning to original values
+
+					vab.PlaceCamera(new Vector3(0, scrollHeight), originalDistance);
+
+					vab.camPitch = camPitch;
+					vab.camHdg = camHdg;
+
 					fsm.RunEvent(on_normalized);
+				}
 			};
 			st_normalizing.OnLeave = delegate(KFSMState to)
 			{
@@ -224,9 +252,11 @@ namespace CameraController_Next
 		{
 			sharpness = vab.sharpness;
 
-			Transform cameraTransform = vab.GetCameraTransform();
-			originalPosition = cameraTransform.position;
-			originalRotation = cameraTransform.rotation;
+			Transform pivotTransform = vab.GetCameraTransform();
+
+			originalPosition = pivotTransform.position;
+			originalRotation = pivotTransform.rotation;
+			originalDistance = vab.Distance;
 
 			distance = vab.Distance;
 
@@ -242,6 +272,9 @@ namespace CameraController_Next
 			endRot = originalRotation;
 		}
 
+		private Vector3 Clamp(Vector3 value, float max)
+		{ return new Vector3(Mathf.Clamp(value.x, -max, max), Mathf.Clamp(value.y, -max, max), Mathf.Clamp(value.z, -max, max)); }
+
 		private void ProcessInput()
 		{
 			if(!InputLockManager.IsUnlocked(ControlTypes.CAMERACONTROLS) || EventSystem.current.IsPointerOverGameObject())
@@ -250,7 +283,7 @@ namespace CameraController_Next
 			if(GameSettings.AXIS_MOUSEWHEEL.GetAxis() != 0f)
 			{
 				if(Input.GetKey(KeyCode.LeftControl) | Input.GetKey(KeyCode.RightControl))
-					offset += endRot * Vector3.forward * Mathf.Clamp(GameSettings.AXIS_MOUSEWHEEL.GetAxis() * 5f, -10f, 10f);
+					offset = Clamp(offset + endRot * Vector3.forward * Mathf.Clamp(GameSettings.AXIS_MOUSEWHEEL.GetAxis() * 5f, -10f, 10f), maxOffset);
 				else if (GameSettings.Editor_zoomScrollModifier.GetKey())
 					distance = Mathf.Clamp(distance - GameSettings.AXIS_MOUSEWHEEL.GetAxis() * 5f, minDistance, maxDistance);
 				else
@@ -274,7 +307,7 @@ namespace CameraController_Next
 			if(Input.GetMouseButton(3))
 			{
 				float x = Input.GetAxis("Mouse X");
-				offset += endRot * Vector3.right * (-mousefactor_move * x);
+				offset = Clamp(offset + endRot * Vector3.right * (-mousefactor_move * x), maxOffset);
 
 				float y = Input.GetAxis("Mouse Y");
 				scrollHeight = Mathf.Clamp(clampedScrollHeight - y * mousefactor_move, minHeight, maxHeight);
@@ -290,9 +323,9 @@ namespace CameraController_Next
 				if(Input.GetKey(KeyCode.LeftControl) | Input.GetKey(KeyCode.RightControl))
 				{
 					if(GameSettings.CAMERA_ORBIT_LEFT.GetKey())
-						offset += endRot * Vector3.right * (-inputfactor_move * Time.deltaTime);
+						offset = Clamp(offset + endRot * Vector3.right * (-inputfactor_move * Time.deltaTime), maxOffset);
 					if(GameSettings.CAMERA_ORBIT_RIGHT.GetKey())
-						offset += endRot * Vector3.right * (+inputfactor_move * Time.deltaTime);
+						offset = Clamp(offset + endRot * Vector3.right * (+inputfactor_move * Time.deltaTime), maxOffset);
 				}
 				else
 				{
@@ -316,18 +349,39 @@ namespace CameraController_Next
 
 			distance = EditorBounds.ClampCameraDistance(distance);
 
-			Transform cameraTransform = vab.GetCameraTransform();
+			Transform pivotTransform = vab.GetCameraTransform();
+
+			Vector3 predictedPos = endRot * Vector3.back * distance;
+
+			if((Mathf.Abs(predictedPos.x + endPos.x) > maxRealDistance) || (Mathf.Abs(predictedPos.z + endPos.z) > maxRealDistance))
+			{
+				float factorX = 1.0f;
+
+				if((-maxRealDistance - offset.x) > predictedPos.x)
+					factorX = Mathf.Abs(-maxRealDistance - offset.x) / Mathf.Abs(predictedPos.x);
+				else if((maxRealDistance - offset.x) < predictedPos.x)
+					factorX = Mathf.Abs(maxRealDistance - offset.x) / Mathf.Abs(predictedPos.x);
+
+				float factorZ = 1.0f;
+
+				if((-maxRealDistance - offset.z) > predictedPos.z)
+					factorZ = Mathf.Abs(-maxRealDistance - offset.z) / Mathf.Abs(predictedPos.z);
+				else if((maxRealDistance - offset.z) < predictedPos.z)
+					factorZ = Mathf.Abs(maxRealDistance - offset.z) / Mathf.Abs(predictedPos.z);
+
+				distance *= Mathf.Min(factorX, factorZ);
+			}
 
 			if(smooth)
 			{
-				cameraTransform.rotation = Quaternion.Lerp(cameraTransform.rotation, endRot, sharpness * Time.deltaTime);
-				cameraTransform.position = Vector3.Lerp(cameraTransform.position, endPos, sharpness * Time.deltaTime);
+				pivotTransform.rotation = Quaternion.Lerp(pivotTransform.rotation, endRot, sharpness * Time.deltaTime);
+				pivotTransform.position = Vector3.Lerp(pivotTransform.position, endPos, sharpness * Time.deltaTime);
 				vab.transform.localPosition = Vector3.Lerp(vab.transform.localPosition, Vector3.back * distance, sharpness * Time.deltaTime);
 			}
 			else
 			{
-				cameraTransform.rotation = endRot;
-				cameraTransform.position = endPos;
+				pivotTransform.rotation = endRot;
+				pivotTransform.position = endPos;
 				vab.transform.localPosition = Vector3.back * distance;
 			}
 		}
