@@ -496,7 +496,10 @@ namespace CameraController_Next
 
 				// deactivate camera controller if key is pressed
 				if(Input.GetKeyDown(OnOffKey))
-					fsm.RunEvent(on_normalize);
+				{
+					if(!Input.GetKey(KeyCode.RightControl) && !Input.GetKey(KeyCode.RightShift))
+						fsm.RunEvent(on_normalize);
+				}
 			};
 			st_active.OnLeave = delegate(KFSMState to)
 			{
@@ -508,6 +511,9 @@ namespace CameraController_Next
 			st_normalizing.OnEnter = delegate(KFSMState from)
 			{
 				SetCamCoordsFromPosition(position);
+
+				FlightCamera.fetch.transform.position = position;
+				FlightCamera.fetch.transform.rotation = rotation;
 
 				lerp = 0f;
 			};
@@ -833,6 +839,22 @@ namespace CameraController_Next
 
 		private void ProcessInput()
 		{
+			if(Input.GetKeyDown(OnOffKey) && Input.GetKey(KeyCode.RightShift))
+			{
+				pivot = GetReferencePosition();
+				relPivot = Vector3.zero;
+
+				Vector3 vector = Quaternion.Inverse(pivotRotation) * (position - pivot).normalized;
+				float camHdg = Mathf.Atan2(0f - vector.z, vector.x) - (float)Math.PI / 2f;
+				float camPitch = Mathf.Atan2(vector.y, Mathf.Sqrt(vector.x * vector.x + vector.z * vector.z));
+				rotation = pivotRotation * Quaternion.AngleAxis(camHdg * 57.29578f, Vector3.up) * Quaternion.AngleAxis(camPitch * 57.29578f, Vector3.right);
+				relRotation = Quaternion.Inverse(frameOfReference) * rotation;
+
+				FlightCamera.fetch.transform.rotation = rotation;
+
+				return;
+			}
+
 			// Scroll Acceleration
 
 			tm += Time.deltaTime;
