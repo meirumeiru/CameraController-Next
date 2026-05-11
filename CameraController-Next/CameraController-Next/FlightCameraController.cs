@@ -5,6 +5,76 @@ using UnityEngine.EventSystems;
 
 namespace CameraController_Next
 {
+	public class FlightCameraState : VesselModule
+	{
+		public bool isActive;
+		public uint partOfReferenceId;
+		
+		public Quaternion frameOfReference;
+
+		public Vector3 position;
+		public Quaternion rotation;
+
+		public Vector3 pivot;
+		public Quaternion pivotRotation;
+
+		public Vector3 relPosition;
+		public Quaternion relRotation;
+
+		public Vector3 relPivot;
+		public Quaternion relPivotRotation;
+
+		protected override void OnLoad(ConfigNode node)
+		{
+			node.TryGetValue("frameOfReference", ref frameOfReference);
+
+			partOfReferenceId = 0;
+			node.TryGetValue("partOfReference", ref partOfReferenceId);
+
+			node.TryGetValue("position", ref position);
+			node.TryGetValue("rotation", ref rotation);
+
+			node.TryGetValue("pivot", ref pivot);
+			node.TryGetValue("pivotRotation", ref pivotRotation);
+
+			node.TryGetValue("relPosition", ref relPosition);
+			node.TryGetValue("relRotation", ref relRotation);
+
+			node.TryGetValue("relPivot", ref relPivot);
+			node.TryGetValue("relPivotRotation", ref relPivotRotation);
+
+			isActive = false;
+			node.TryGetValue("isActive", ref isActive);
+
+		//	if(FlightGlobals.ActiveVessel == vessel)
+		//		FlightCameraController.Instance.LoadState(this);
+		}
+
+		protected override void OnSave(ConfigNode node)
+		{
+			if(FlightGlobals.ActiveVessel == vessel)
+				FlightCameraController.Instance.SaveState(this);
+
+			node.AddValue("frameOfReference", frameOfReference);
+			if(partOfReferenceId != 0)
+				node.AddValue("partOfReference", partOfReferenceId);
+
+			node.AddValue("position", position);
+			node.AddValue("rotation", rotation);
+
+			node.AddValue("pivot", pivot);
+			node.AddValue("pivotRotation", pivotRotation);
+
+			node.AddValue("relPosition", relPosition);
+			node.AddValue("relRotation", relRotation);
+
+			node.AddValue("relPivot", relPivot);
+			node.AddValue("relPivotRotation", relPivotRotation);
+
+			node.AddValue("isActive", isActive);
+		}
+	}
+
 	[KSPScenario(ScenarioCreationOptions.AddToAllGames, GameScenes.FLIGHT)]
 	public class FlightCameraController : ScenarioModule
 	{
@@ -170,60 +240,54 @@ namespace CameraController_Next
 				ControllerInstance = this;
 		}
 
-		public override void OnLoad(ConfigNode node)
+		public void LoadState(FlightCameraState state)
 		{
-			base.OnLoad(node);
-
-			node.TryGetValue("frameOfReference", ref frameOfReference);
+			frameOfReference = state.frameOfReference;
 
 			targetMode = FlightCamera.TargetMode.Vessel;
-			partOfReferenceId = 0;
-			node.TryGetValue("partOfReference", ref partOfReferenceId);
+			partOfReferenceId = state.partOfReferenceId;
 
-			node.TryGetValue("position", ref position);
-			node.TryGetValue("rotation", ref rotation);
+			position = state.position;
+			rotation = state.rotation;
 
-			node.TryGetValue("pivot", ref pivot);
-			node.TryGetValue("pivotRotation", ref pivotRotation);
+			pivot = state.pivot;
+			pivotRotation = state.pivotRotation;
 
-			node.TryGetValue("relPosition", ref relPosition);
-			node.TryGetValue("relRotation", ref relRotation);
+			relPosition = state.relPosition;
+			relRotation = state.relRotation;
 
-			node.TryGetValue("relPivot", ref relPivot);
-			node.TryGetValue("relPivotRotation", ref relPivotRotation);
+			relPivot = state.relPivot;
+			relPivotRotation = state.relPivotRotation;
 
 			isActive = false;
 			if(RestoreAtLoad)
-				node.TryGetValue("isActive", ref isActive);
+				isActive = state.isActive;
 		}
 
-		public override void OnSave(ConfigNode node)
+		public void SaveState(FlightCameraState state)
 		{
-			base.OnSave(node);
+			state.frameOfReference = frameOfReference;
+			state.partOfReferenceId = partOfReferenceId;
 
-			node.AddValue("frameOfReference", frameOfReference);
-			if(partOfReferenceId != 0)
-				node.AddValue("partOfReference", partOfReferenceId);
+			state.position = position;
+			state.rotation = rotation;
 
-			node.AddValue("position", position);
-			node.AddValue("rotation", rotation);
-
-			node.AddValue("pivot", pivot);
-			node.AddValue("pivotRotation", pivotRotation);
+			state.pivot = pivot;
+			state.pivotRotation = pivotRotation;
 
 			// Remarks: we always store the values for the Vessel-TargetMode -> because of how the initialization works after loading it
 
 			Vector3 refPosition = FlightGlobals.ActiveVessel.vesselTransform.TransformPoint(FlightGlobals.ActiveVessel.localCoM);
 
-		//	node.AddValue("relPosition", relPosition);
-			node.AddValue("relPosition", Quaternion.Inverse(frameOfReference) * (position - refPosition));
-			node.AddValue("relRotation", relRotation);
+		//	state.relPosition = relPosition;
+			state.relPosition = Quaternion.Inverse(frameOfReference) * (position - refPosition);
+			state.relRotation = relRotation;
 
-		//	node.AddValue("relPivot", relPivot);
-			node.AddValue("relPivot", Quaternion.Inverse(frameOfReference) * (pivot - refPosition));
-			node.AddValue("relPivotRotation", relPivotRotation);
+		//	state.relPivot = relPivot;
+			state.relPivot = Quaternion.Inverse(frameOfReference) * (pivot - refPosition);
+			state.relPivotRotation = relPivotRotation;
 
-			node.AddValue("isActive", (fsm.CurrentState == st_active));
+			state.isActive = (fsm.CurrentState == st_active);
 		}
 
 		public void Start()
@@ -240,6 +304,13 @@ namespace CameraController_Next
 			Init();
 
 			SetupFSM();
+
+			if(FlightGlobals.ActiveVessel != null)
+			{
+				FlightCameraState CameraState = FlightGlobals.ActiveVessel.FindVesselModuleImplementing<FlightCameraState>();
+				if(CameraState != null)
+					LoadState(CameraState);
+			}
 
 			if(isActive)
 			{
@@ -378,6 +449,13 @@ namespace CameraController_Next
 				else
 				{
 					CaptureCamera();
+
+					FlightCameraState CameraState = currentVessel.FindVesselModuleImplementing<FlightCameraState>();
+					if(CameraState == null)
+					{
+						CameraState = currentVessel.gameObject.AddComponent<FlightCameraState>();
+						currentVessel.vesselModules.Add(CameraState);
+					}
 
 					ScreenMessages.PostScreenMessage("CameraController active", 3, ScreenMessageStyle.UPPER_CENTER);
 				}
