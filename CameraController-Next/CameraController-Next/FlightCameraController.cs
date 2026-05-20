@@ -9,14 +9,8 @@ namespace CameraController_Next
 	{
 		public bool isActive;
 		public uint partOfReferenceId;
-		
-		public Quaternion frameOfReference;
 
-		public Vector3 position;
-		public Quaternion rotation;
-
-		public Vector3 pivot;
-		public Quaternion pivotRotation;
+		public FoRModes FoRMode;
 
 		public Vector3 relPosition;
 		public Quaternion relRotation;
@@ -26,16 +20,12 @@ namespace CameraController_Next
 
 		protected override void OnLoad(ConfigNode node)
 		{
-			node.TryGetValue("frameOfReference", ref frameOfReference);
+			int _FoRMode = 0;
+			node.TryGetValue("FoRMode", ref _FoRMode);
+			FoRMode = (FoRModes)_FoRMode;
 
 			partOfReferenceId = 0;
 			node.TryGetValue("partOfReference", ref partOfReferenceId);
-
-			node.TryGetValue("position", ref position);
-			node.TryGetValue("rotation", ref rotation);
-
-			node.TryGetValue("pivot", ref pivot);
-			node.TryGetValue("pivotRotation", ref pivotRotation);
 
 			node.TryGetValue("relPosition", ref relPosition);
 			node.TryGetValue("relRotation", ref relRotation);
@@ -55,15 +45,10 @@ namespace CameraController_Next
 			if(FlightGlobals.ActiveVessel == vessel)
 				FlightCameraController.Instance.SaveState(this);
 
-			node.AddValue("frameOfReference", frameOfReference);
+			node.AddValue("FoRMode", (int)FoRMode);
+
 			if(partOfReferenceId != 0)
 				node.AddValue("partOfReference", partOfReferenceId);
-
-			node.AddValue("position", position);
-			node.AddValue("rotation", rotation);
-
-			node.AddValue("pivot", pivot);
-			node.AddValue("pivotRotation", pivotRotation);
 
 			node.AddValue("relPosition", relPosition);
 			node.AddValue("relRotation", relRotation);
@@ -159,8 +144,11 @@ namespace CameraController_Next
 		// position and rotation
 
 		private bool isActive;
+
+		private Vessel currentVessel;
 		private uint partOfReferenceId;
 		
+		public FoRModes FoRMode;
 		public Quaternion frameOfReference;
 
 		public FlightCamera.TargetMode targetMode;
@@ -242,50 +230,37 @@ namespace CameraController_Next
 
 		public void LoadState(FlightCameraState state)
 		{
-			frameOfReference = state.frameOfReference;
+			FoRMode = state.FoRMode;
 
 			targetMode = FlightCamera.TargetMode.Vessel;
 			partOfReferenceId = state.partOfReferenceId;
 
-			position = state.position;
-			rotation = state.rotation;
-
-			pivot = state.pivot;
-			pivotRotation = state.pivotRotation;
-
-			relPosition = state.relPosition;
-			relRotation = state.relRotation;
-
-			relPivot = state.relPivot;
-			relPivotRotation = state.relPivotRotation;
-
 			isActive = false;
 			if(RestoreAtLoad)
 				isActive = state.isActive;
+
+			if(isActive)
+			{
+				tempRoot = state.Vessel.rootPart.transform;
+
+				tempRelPosition = state.relPosition;
+				tempRelRotation = state.relRotation;
+				tempRelPivot = state.relPivot;
+				tempRelPivotRotation = state.relPivotRotation;
+			}
 		}
 
 		public void SaveState(FlightCameraState state)
 		{
-			state.frameOfReference = frameOfReference;
+			state.FoRMode = FoRMode;
+
 			state.partOfReferenceId = partOfReferenceId;
 
-			state.position = position;
-			state.rotation = rotation;
+			state.relPosition = Quaternion.Inverse(state.Vessel.rootPart.transform.rotation) * (position - state.Vessel.rootPart.transform.position);
+			state.relRotation = Quaternion.Inverse(state.Vessel.rootPart.transform.rotation) * rotation;
 
-			state.pivot = pivot;
-			state.pivotRotation = pivotRotation;
-
-			// Remarks: we always store the values for the Vessel-TargetMode -> because of how the initialization works after loading it
-
-			Vector3 refPosition = FlightGlobals.ActiveVessel.vesselTransform.TransformPoint(FlightGlobals.ActiveVessel.localCoM);
-
-		//	state.relPosition = relPosition;
-			state.relPosition = Quaternion.Inverse(frameOfReference) * (position - refPosition);
-			state.relRotation = relRotation;
-
-		//	state.relPivot = relPivot;
-			state.relPivot = Quaternion.Inverse(frameOfReference) * (pivot - refPosition);
-			state.relPivotRotation = relPivotRotation;
+			state.relPivot = Quaternion.Inverse(state.Vessel.rootPart.transform.rotation) * (pivot - state.Vessel.rootPart.transform.position);
+			state.relPivotRotation = Quaternion.Inverse(state.Vessel.rootPart.transform.rotation) * pivotRotation;
 
 			state.isActive = (fsm.CurrentState == st_active);
 		}
@@ -296,7 +271,6 @@ namespace CameraController_Next
 			GameEvents.onVesselChange.Add(OnVesselChange);
 
 			GameEvents.onVesselDocking.Add(OnDocking);
-			GameEvents.onDockingComplete.Add(OnDocked);
 
 			GameEvents.onPartUndock.Add(OnUndocking);
 			GameEvents.onPartDeCouple.Add(OnUndocking);
@@ -304,6 +278,8 @@ namespace CameraController_Next
 			Init();
 
 			SetupFSM();
+
+			isActive = false;
 
 			if(FlightGlobals.ActiveVessel != null)
 			{
@@ -314,6 +290,8 @@ namespace CameraController_Next
 
 			if(isActive)
 			{
+				currentVessel = FlightGlobals.ActiveVessel;
+
 				fsm.StartFSM("active");
 
 				if(partOfReferenceId != 0)
@@ -343,7 +321,6 @@ namespace CameraController_Next
 			GameEvents.onVesselChange.Remove(OnVesselChange);
 
 			GameEvents.onVesselDocking.Remove(OnDocking);
-			GameEvents.onDockingComplete.Remove(OnDocked);
 
 			GameEvents.onPartUndock.Remove(OnUndocking);
 			GameEvents.onPartDeCouple.Remove(OnUndocking);
@@ -424,31 +401,18 @@ namespace CameraController_Next
 
 				if(from == null)
 				{
-					currentVessel = FlightGlobals.ActiveVessel;
+					partOfReference = null;
+					targetMode = FlightCamera.TargetMode.Vessel;
 
-			//		if(partOfReferenceId == 0)
-					{
-						partOfReference = null;
-						targetMode = FlightCamera.TargetMode.Vessel;
-					}
-			//		else
-			/*		{
-						partOfReference = currentVessel.PartsContain(partOfReferenceId);
-						if(partOfReference)
-						{
-							targetMode = FlightCamera.TargetMode.Part;
-							FlightCamera.fetch.SetTargetPart(partOfReference);
-						}
-						else
-						{
-							targetMode = FlightCamera.TargetMode.Vessel;
-							partOfReferenceId = 0;
-						}
-					}*/
+					tempCount = 153;
 				}
 				else
 				{
+					currentVessel = FlightGlobals.ActiveVessel;
+
 					CaptureCamera();
+
+					FoRMode = FlightCamera.fetch.FoRMode;
 
 					FlightCameraState CameraState = currentVessel.FindVesselModuleImplementing<FlightCameraState>();
 					if(CameraState == null)
@@ -464,17 +428,29 @@ namespace CameraController_Next
 			};
 			st_active.OnLateUpdate = delegate
 			{
-				FoRModes oldFoR = FlightCamera.fetch.FoRMode;
-
 				// calculate the original position of the camera
 				ShadowLateUpdate();
 
-				if((FlightCamera.fetch.FoRMode != oldFoR)
+				if((FlightCamera.fetch.FoRMode != FoRMode)
 				|| (FlightCamera.fetch.targetMode != targetMode)
-				|| (partOfReference && (partOfReference.transform != FlightCamera.fetch.Target)))
+				|| (partOfReference && (partOfReference.transform != FlightCamera.fetch.Target))
+				|| tempRoot)
 				{
 					// calculate old version
-					CalculateCameraPosition(oldFoR);
+					CalculateCameraPosition(FoRMode);
+
+					if(tempRoot)
+					{
+						RestoreTempRelative();
+
+						if(tempCount > 10)
+							tempCount -= 10;
+						else if(currentVessel.vesselTransform.position.magnitude < 0.1f)
+							--tempCount;
+				
+						if(tempCount <= 0)
+							tempRoot = null;
+					}
 
 					// capture new setting
 					CaptureCamera(true);
@@ -482,6 +458,8 @@ namespace CameraController_Next
 
 				// calculate our position of the camera
 				CalculateCameraPosition(FlightCamera.fetch.FoRMode);
+
+				FoRMode = FlightCamera.fetch.FoRMode;
 
 				// process inputs
 				if(InputLockManager.IsUnlocked(ControlTypes.CAMERACONTROLS) || (FlightDriver.Pause && !KSP.UI.UIMasterController.Instance.IsUIShowing))
@@ -504,6 +482,7 @@ namespace CameraController_Next
 			st_active.OnLeave = delegate(KFSMState to)
 			{
 				isActive = false;
+				tempRoot = null;
 			};
 			fsm.AddState(st_active);
 
@@ -565,8 +544,6 @@ namespace CameraController_Next
 
 		private void CaptureCamera(bool keepPosition = false)
 		{
-			currentVessel = FlightGlobals.ActiveVessel;
-
 			targetMode = FlightCamera.fetch.targetMode;
 
 			if(targetMode == FlightCamera.TargetMode.Part)
@@ -598,9 +575,7 @@ namespace CameraController_Next
 			relRotation = Quaternion.Inverse(frameOfReference) * rotation;
 	
 			relPivot = Quaternion.Inverse(frameOfReference) * (pivot - refPosition);
-
-			if(!keepPosition)
-				relPivotRotation = Quaternion.identity;
+			relPivotRotation = Quaternion.Inverse(frameOfReference) * pivotRotation;
 		}
 
 		private void ShadowLateUpdate()
@@ -757,62 +732,75 @@ namespace CameraController_Next
 	//		ShadowCamera.transform.Rotate(Vector3.forward, FlightCamera.fetch.tIRroll * 57.29578f, Space.Self);
 		}
 
-		private bool docking = false;
+		private Transform tempRoot = null;
+		private Vector3 tempRelPosition;
+		private Quaternion tempRelRotation;
+		private Vector3 tempRelPivot;
+		private Quaternion tempRelPivotRotation;
+		private int tempCount = 0;
 
-		private bool dockingPos = false;
-
-		private Part targetPart;
-		private Vector3 pivotPosition;
-		private Vector3 cameraPosition;
-		private Quaternion cameraRotation;
-
-		protected void OnDocking(uint id1, uint id2)
+		protected void StoreTempRelative(Transform root)
 		{
-			docking = (currentVessel != null) ? ((currentVessel.persistentId == id1) | (currentVessel.persistentId == id2)) : false;
+			if(tempRoot)
+				RestoreTempRelative();
 
-			if(dockingPos = docking)
-			{
-				targetPart = (FlightCamera.fetch.targetMode == FlightCamera.TargetMode.Part) ? FlightCamera.fetch.partTarget : null;
+			tempRoot = root;
 
-				pivotPosition = FlightCamera.fetch.GetPivot().position;
-				cameraPosition = FlightCamera.fetch.GetCameraTransform().position;
-				cameraRotation = FlightCamera.fetch.GetCameraTransform().rotation;
-			}
+			tempRelPosition = tempRoot.InverseTransformPoint(position);
+			tempRelRotation = Quaternion.Inverse(tempRoot.rotation) * rotation;
+			tempRelPivot = tempRoot.InverseTransformPoint(pivot);
+			tempRelPivotRotation = Quaternion.Inverse(tempRoot.rotation) * pivotRotation;
 		}
-
-		protected void OnDocked(GameEvents.FromToAction<Part, Part> partAction)
+	
+		protected void RestoreTempRelative()
 		{
-			if(dockingPos)
-			{
-				if(targetPart)
-					FlightCamera.fetch.SetTargetPart(targetPart);
-
-				FlightCamera.fetch.GetPivot().position = pivotPosition;
-				FlightCamera.fetch.SetCamCoordsFromPosition(cameraPosition);
-				FlightCamera.fetch.GetCameraTransform().position = cameraPosition;
-				FlightCamera.fetch.GetCameraTransform().rotation = cameraRotation;
-
-				dockingPos = false;
-			}
+			position = tempRoot.TransformPoint(tempRelPosition);
+			rotation = tempRoot.rotation * tempRelRotation;
+			pivot = tempRoot.TransformPoint(tempRelPivot);
+			pivotRotation = tempRoot.rotation * tempRelPivotRotation;
 		}
-
-		private bool undocking = false;
-
-		protected void OnUndocking(Part part)
-		{
-			undocking = (currentVessel != null) ? (part.vessel == currentVessel) : false;
-		}
-
-		private Vessel currentVessel;
 
 		protected void OnVesselChange(Vessel vessel)
 		{
-			bool closetogether = currentVessel ? ((vessel.transform.position - currentVessel.transform.position).magnitude < closeDistance) : false;
+			if(currentVessel)
+			{
+				FlightCameraState CameraState = currentVessel.FindVesselModuleImplementing<FlightCameraState>();
+				if(CameraState == null)
+				{
+					CameraState = currentVessel.gameObject.AddComponent<FlightCameraState>();
+					currentVessel.vesselModules.Add(CameraState);
+				}
 
-			CaptureCamera(docking | undocking | closetogether);
+				SaveState(CameraState);
 
-			docking = false;
-			undocking = false;
+				float sqrCloseDistance = closeDistance * closeDistance;
+
+				for(int i = 0; i < vessel.parts.Count; i++)
+				{
+					if((vessel.parts[i].transform.position - pivot).sqrMagnitude < sqrCloseDistance)
+					{
+						StoreTempRelative(currentVessel.transform);
+						return;
+					}
+				}
+			}
+
+			currentVessel = FlightGlobals.ActiveVessel;
+		}
+
+		protected void OnDocking(uint id1, uint id2)
+		{
+			if((currentVessel != null) && ((currentVessel.persistentId == id1) | (currentVessel.persistentId == id2)))
+			{
+				StoreTempRelative(currentVessel.transform);
+				tempCount = 50;
+			}
+		}
+
+		protected void OnUndocking(Part part)
+		{
+			if((currentVessel != null) && (part.vessel == currentVessel))
+				StoreTempRelative(currentVessel.transform);
 		}
 
 		private Vector3 GetReferencePosition()
